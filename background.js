@@ -65,16 +65,16 @@ async function markAllExamMateTabs() {
 
 async function markTab(tabId) {
   var entries = await loadCache();
-  var doneNames = entries.filter(function (e) { return !e.is_favourite; }).map(function (e) { return e.question_name; });
-  // All entries that have is_favourite = true
+  var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
-  // Done = in DB (regardless of fav status)
   var allNames = entries.map(function (e) { return e.question_name; });
+  var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
   try {
     await chrome.tabs.sendMessage(tabId, {
       action: 'markDone',
       questionNames: allNames,
-      favouriteNames: favNames
+      favouriteNames: favNames,
+      todoNames: todoNames
     });
   } catch (e) { }
 }
@@ -115,6 +115,73 @@ chrome.contextMenus.onClicked.addListener(function (info, tab) {
 // ── Message listener: toggleDoneFromPage + toggleFavouriteFromPage ────────────
 
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+
+  if (request.action === 'requestSyncState') {
+    (async function() {
+      var entries = await loadCache();
+      var today = new Date().toISOString().split('T')[0];
+      var doneNames = entries.map(function(e) { return e.question_name; });
+      var favNames = entries.filter(function(e) { return e.is_favourite; }).map(function(e) { return e.question_name; });
+      var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
+      sendResponse({ questionNames: doneNames, favouriteNames: favNames, todoNames: todoNames });
+    })();
+    return true;
+  }
+
+  if (request.action === 'openTodayPanel') {
+    if (chrome.action && chrome.action.openPopup) {
+      chrome.action.openPopup().then(function() {
+        setTimeout(function() {
+          chrome.runtime.sendMessage({ action: 'switchToToday' });
+        }, 150);
+      }).catch(function() {});
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'updateTodoQueue') {
+    (async function() {
+      var settings = await getSettings();
+      var entries = await loadCache();
+      var today = new Date().toISOString().split('T')[0];
+
+      var addSet = new Set(request.add || []);
+      var removeSet = new Set(request.remove || []);
+
+      entries.forEach(function(entry) {
+        if (addSet.has(entry.question_name)) {
+          entry.todo_date = today;
+          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
+            fsWrite(settings, entry).catch(function() {});
+          }
+        }
+        if (removeSet.has(entry.question_name)) {
+          entry.todo_date = null;
+          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
+            fsWrite(settings, entry).catch(function() {});
+          }
+        }
+      });
+
+      var unlogged = request.addWithData || [];
+      unlogged.forEach(function(entryData) {
+        var exists = entries.some(function(e) { return e.question_name === entryData.question_name; });
+        if (!exists) {
+          entryData.todo_date = today;
+          entryData.is_favourite = false;
+          entries.unshift(entryData);
+          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
+            fsWrite(settings, entryData).catch(function() {});
+          }
+        }
+      });
+
+      await saveCache(entries);
+    })();
+    sendResponse({ ok: true });
+    return true;
+  }
 
   if (request.action === 'toggleDoneFromPage') {
     (async function () {

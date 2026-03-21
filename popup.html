@@ -76,7 +76,21 @@
     .del-btn:hover { color: #A32D2D; }
     .empty-db { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
 
-
+    /* Today panel */
+    .today-item { padding: 9px 10px; border-bottom: 1px solid #E3F2FD; display: flex; align-items: center; gap: 8px; }
+    .today-item:last-child { border-bottom: none; }
+    .today-item.is-done { opacity: 0.5; }
+    .today-item.is-done .today-name { text-decoration: line-through; }
+    .today-name { font-size: 12px; font-weight: 500; color: #1a1a1a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-meta { font-size: 10px; color: #999; margin-top: 1px; }
+    .today-remove-btn { font-size: 10px; padding: 2px 7px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #888; cursor: pointer; }
+    .today-remove-btn:hover { border-color: #E24B4A; color: #E24B4A; }
+    .today-progress { font-size: 11px; color: #888; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+    .today-progress-bar { flex: 1; height: 4px; background: #e0e0e0; border-radius: 2px; overflow: hidden; }
+    .today-progress-fill { height: 100%; background: #2196F3; border-radius: 2px; transition: width 0.3s; }
+    .today-clear-btn { font-size: 11px; padding: 5px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; color: #555; cursor: pointer; }
+    .today-clear-btn:hover { background: #f0f0f0; }
+    .empty-today { text-align: center; padding: 32px 16px; color: #aaa; font-size: 12px; line-height: 1.8; }
 
     /* Favourites panel */
     .fav-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
@@ -135,6 +149,7 @@
   </div>
   <div class="header-right">
     <button class="hdr-btn active-tab" id="btn-log-view">Log</button>
+    <button class="hdr-btn" id="btn-today-view">Today</button>
     <button class="hdr-btn" id="btn-favourites-view">♥ Favs</button>
     <button class="hdr-btn" id="btn-db-view">DB</button>
     <button class="hdr-btn" id="btn-settings-view">⚙</button>
@@ -177,6 +192,11 @@
   </div>
 
 
+
+  <!-- ── Today panel (NEW) ── -->
+  <div class="panel" id="panel-today">
+    <!-- content rendered by JS -->
+  </div>
 
   <!-- ── Favourites panel (NEW) ── -->
   <div class="panel" id="panel-favourites">

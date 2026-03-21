@@ -32,8 +32,8 @@ function injectAllCSS() {
     'div.mt-0.mb-3.page-title-box { display: none; margin-top: 0px; border-top-width: 0px; padding-top: 0px;}',
     'div.row.justify-content-center.justify-content-lg-start.align-items-center.align-items-lg-start { display: none; }',
     'div.p-0.card.card-body { margin-bottom: 3px; }',
-    'div.col-xl-3.col-lg-4.pe-lg-0 { width:270px; padding-left: 0px; padding-right: 0px }',
-    'div.col-xl-9.col-lg-8.ps-lg-1 { width: calc(100% - 300px); padding-right: 0px;}',
+    'div.col-xl-3.col-lg-4.pe-lg-0 { width:310px !important; padding-left: 0px; padding-right: 0px }',
+    'div.col-xl-9.col-lg-8.ps-lg-1 { width: calc(100% - 320px) !important; padding-right: 0px;}',
     '#body-vertical-page { padding-bottom: 0px;}',
     'div.d-block.q-topics {text-align: left;}',
     'img.img-fluid {text-align: center;}',
@@ -95,6 +95,25 @@ function injectAllCSS() {
     '  transition: width 0.4s ease;',
     '}',
 
+    // ── To-Do Queue CSS ──
+    '#questions-list1.ib-select-mode .ib-fav-btn, #questions-list1.ib-select-mode .ib-done-btn { display: none !important; }',
+    '#questions-list1.ib-select-mode .ib-todo-checkbox { display: inline-block !important; margin-left: 6px; vertical-align: middle; }',
+    '.ib-todo-checkbox { display: none; width: 16px; height: 16px; cursor: pointer; }',
+    '#ib-todo-toast { position: fixed; bottom: 20px; left: 20px; background: #1a1a1a; color: white; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; z-index: 99998; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: ib-slidein 0.2s ease; }',
+    '#ib-todo-toast button { background: none; border: 1px solid rgba(255,255,255,0.3); color: white; padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; }',
+    '#ib-todo-toast button:hover { background: rgba(255,255,255,0.1); }',
+    '@keyframes ib-slidein { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }',
+    
+    // Priority order: done > todo > favourite
+    '#questions-list1 li.ib-todo { border-left: 3px solid #2196F3 !important; background-color: #E3F2FD !important; }',
+    '#questions-list1 li.active.ib-todo { background-color: #BBDEFB !important; border-left: 3px solid #1565C0 !important; }',
+    '#questions-list1 li.done.ib-todo { background-color: #E8F5E9 !important; border-left: 3px solid #2196F3 !important; }',
+    '#questions-list1 li.active.done.ib-todo { background-color: #FFF176 !important; border-left: 3px solid #2196F3 !important; }',
+    '#questions-list1 li.ib-todo.ib-fav:not(.done) { background-color: #E3F2FD !important; border-left: 3px solid #2196F3 !important; }',
+    '#questions-list1 li.done.ib-todo.ib-fav { background-color: #E8F5E9 !important; border-left: 3px solid #2196F3 !important; }',
+    
+    '#questions-list1 li.ib-todo.ib-fav:not(.done) { background-color: #E3F2FD !important; border-left: 3px solid #2196F3 !important; }',
+    '#questions-list1 li.done.ib-todo.ib-fav { background-color: #E8F5E9 !important; border-left: 3px solid #2196F3 !important; }',
 
 
   ].join('\n');
@@ -141,6 +160,9 @@ function removeLoadingOverlay() {
 
 var ibInjectionTimeout = null;
 var ibStateSyncInProgress = false;
+var ibSelectModeActive = false;
+var ibCurrentTodoSet = new Set();
+var ibInitialTodoSet = new Set();
 
 function injectDoneCheckboxes() {
   var list = document.getElementById('questions-list1');
@@ -168,12 +190,193 @@ function injectDoneCheckboxes() {
           var name = nameSpan ? nameSpan.textContent.trim() : null;
           if (name && doneNames.has(name)) li.classList.add('done');
           else li.classList.remove('done');
+          var todoNames = new Set(response.todoNames || []);
+          if (name) li.classList.toggle('ib-todo', todoNames.has(name));
         });
         updateButtonStates(doneNames, favNames);
       }
     });
   }
+
+  if (ibSelectModeActive) list.classList.add('ib-select-mode');
+
+  // Inject Toolbar Buttons into sortable-header
+  var toolbarRow = document.querySelector('ul.sortable-header');
+  if (toolbarRow && !document.getElementById('ib-todo-nav-item')) {
+    // Permanently hide the filtered and page count badges (elements without nav-item usually)
+    Array.from(toolbarRow.children).forEach(function(child) {
+      if (child.tagName === 'LI' && !child.classList.contains('nav-item')) {
+        child.style.display = 'none';
+      }
+    });
+
+    var todoNavItem = document.createElement('li');
+    todoNavItem.className = 'nav-item';
+    todoNavItem.id = 'ib-todo-nav-item';
+    todoNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-list d-block text-center"></i><span style="font-size:0.6rem; font-weight:700"> To-Do </span></a>';
+    todoNavItem.onclick = toggleSelectMode;
+
+    var allNavItem = document.createElement('li');
+    allNavItem.className = 'nav-item ib-select-mode-only';
+    allNavItem.id = 'ib-all-nav-item';
+    allNavItem.style.display = 'none';
+    allNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-check-double d-block text-center"></i><span style="font-size:0.6rem; font-weight:700" id="ib-all-text"> All </span></a>';
+    allNavItem.onclick = function() {
+      var checkboxes = list.querySelectorAll('.ib-todo-checkbox');
+      var anyUnchecked = Array.from(checkboxes).some(function(cb) { return !cb.checked; });
+      var targetState = anyUnchecked;
+      
+      var add = [];
+      var remove = [];
+      var addWithData = [];
+      
+      chrome.storage.local.get(['ib_question_cache'], function(res) {
+        var entries = res.ib_question_cache || [];
+        var cacheSet = new Set(entries.map(function(e) { return e.question_name; }));
+        var today = new Date().toISOString().split('T')[0];
+        
+        checkboxes.forEach(function(cb) {
+          if (cb.checked !== targetState) {
+            cb.checked = targetState;
+            var name = cb.getAttribute('data-qname');
+            if (targetState) {
+              ibCurrentTodoSet.add(name);
+              if (cacheSet.has(name)) add.push(name);
+              else {
+                var li = cb.closest('li');
+                var parsed = parseOnclickData(li);
+                addWithData.push({
+                  question_name: name,
+                  subject: inferSubject(name),
+                  question_imgs: parsed ? (parsed.question_images || []) : [],
+                  answer_imgs: parsed ? (parsed.answer_images || []) : [],
+                  old_topics: parsed ? (parsed.topics || '') : '',
+                  new_chapters: [],
+                  is_favourite: false,
+                  logged_at: null,
+                  todo_date: today,
+                  source_url: window.location.href
+                });
+              }
+            } else {
+              ibCurrentTodoSet.delete(name);
+              remove.push(name);
+            }
+          }
+        });
+        
+        document.getElementById('ib-all-text').textContent = targetState ? ' None ' : ' All ';
+        
+        if (add.length > 0 || remove.length > 0 || addWithData.length > 0) {
+          chrome.runtime.sendMessage({
+            action: 'updateTodoQueue',
+            add: add,
+            remove: remove,
+            addWithData: addWithData
+          });
+        }
+      });
+    };
+
+    var saveNavItem = document.createElement('li');
+    saveNavItem.className = 'nav-item ib-select-mode-only';
+    saveNavItem.id = 'ib-save-nav-item';
+    saveNavItem.style.display = 'none';
+    saveNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-disk d-block text-center"></i><span style="font-size:0.6rem; font-weight:700"> Save </span></a>';
+    saveNavItem.onclick = toggleSelectMode;
+
+    toolbarRow.appendChild(todoNavItem);
+    toolbarRow.appendChild(allNavItem);
+    toolbarRow.appendChild(saveNavItem);
+  }
 }
+
+function toggleSelectMode() {
+  var list = document.getElementById('questions-list1');
+  if (!list) return;
+  ibSelectModeActive = !ibSelectModeActive;
+  
+  var toolbarRow = document.querySelector('ul.sortable-header');
+  var filterBtn = document.querySelector('button.filterBtn');
+  
+  if (ibSelectModeActive) {
+    list.classList.add('ib-select-mode');
+    if (filterBtn) filterBtn.disabled = true;
+    
+    if (toolbarRow) {
+      Array.from(toolbarRow.children).forEach(function(li) {
+        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item') {
+          li.style.display = 'block';
+        } else {
+          li.style.display = 'none';
+        }
+      });
+    }
+    
+    chrome.storage.local.get(['ib_question_cache'], function(res) {
+      var entries = res.ib_question_cache || [];
+      var today = new Date().toISOString().split('T')[0];
+      ibInitialTodoSet = new Set();
+      ibCurrentTodoSet = new Set();
+      
+      entries.forEach(function(e) {
+        if (e.todo_date === today) {
+          ibInitialTodoSet.add(e.question_name);
+          ibCurrentTodoSet.add(e.question_name);
+        }
+      });
+      
+      list.querySelectorAll('.ib-todo-checkbox').forEach(function(cb) {
+        var name = cb.getAttribute('data-qname');
+        cb.checked = ibCurrentTodoSet.has(name);
+      });
+    });
+    
+  } else {
+    list.classList.remove('ib-select-mode');
+    if (filterBtn) filterBtn.disabled = false;
+    
+    if (toolbarRow) {
+      Array.from(toolbarRow.children).forEach(function(li) {
+        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item' || !li.classList.contains('nav-item')) {
+          li.style.display = 'none';
+        } else {
+          li.style.display = 'block';
+        }
+      });
+    }
+    
+    var count = ibCurrentTodoSet.size;
+    showTodoToast(count);
+  }
+}
+
+function showTodoToast(count) {
+  var existing = document.getElementById('ib-todo-toast');
+  if (existing) existing.remove();
+  
+  var toast = document.createElement('div');
+  toast.id = 'ib-todo-toast';
+  toast.innerHTML = count + " questions in today's queue." +
+    '<button id="ib-toast-view-btn">View queue &rarr;</button>' +
+    '<button id="ib-toast-dismiss-btn">&#10005;</button>';
+    
+  document.body.appendChild(toast);
+  
+  var viewBtn = document.getElementById('ib-toast-view-btn');
+  if(viewBtn) {
+     viewBtn.onclick = function() {
+       chrome.runtime.sendMessage({ action: 'openTodayPanel' });
+       toast.remove();
+     };
+  }
+  var dismissBtn = document.getElementById('ib-toast-dismiss-btn');
+  if(dismissBtn) {
+    dismissBtn.onclick = function() { toast.remove(); };
+  }
+  setTimeout(function() { if (toast.parentNode) toast.remove(); }, 5000);
+}
+
 
 // Set up a persistent observer on the body to catch when #questions-list1 is replaced/updated
 function setupPersistentObserver() {
@@ -242,8 +445,53 @@ function injectCheckboxIntoLi(li) {
     toggleDoneFromButton(doneBtn, li, question_name);
   };
 
+  // ── Our checkbox ──
+  var checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'ib-todo-checkbox';
+  checkbox.setAttribute('data-qname', question_name);
+  checkbox.onclick = function (e) { 
+    e.stopPropagation(); 
+    var isChecked = this.checked;
+    if (isChecked) ibCurrentTodoSet.add(question_name);
+    else ibCurrentTodoSet.delete(question_name);
+    
+    // Instantly sync the individual click
+    chrome.storage.local.get(['ib_question_cache'], function(res) {
+      var entries = res.ib_question_cache || [];
+      var cacheSet = new Set(entries.map(function(e) { return e.question_name; }));
+      
+      if (isChecked) {
+        if (cacheSet.has(question_name)) {
+          chrome.runtime.sendMessage({ action: 'updateTodoQueue', add: [question_name], remove: [], addWithData: [] });
+        } else {
+          var parsed = parseOnclickData(li);
+          var entryData = {
+            question_name: question_name,
+            subject: inferSubject(question_name),
+            question_imgs: parsed ? (parsed.question_images || []) : [],
+            answer_imgs: parsed ? (parsed.answer_images || []) : [],
+            old_topics: parsed ? (parsed.topics || '') : '',
+            new_chapters: [],
+            is_favourite: false,
+            logged_at: null,
+            todo_date: new Date().toISOString().split('T')[0],
+            source_url: window.location.href
+          };
+          chrome.runtime.sendMessage({ action: 'updateTodoQueue', add: [], remove: [], addWithData: [entryData] });
+        }
+      } else {
+        chrome.runtime.sendMessage({ action: 'updateTodoQueue', add: [], remove: [question_name], addWithData: [] });
+      }
+    });
+  };
+  if (ibSelectModeActive && ibCurrentTodoSet.has(question_name)) {
+    checkbox.checked = true;
+  }
+
   targetSpan.appendChild(favBtn);
   targetSpan.appendChild(doneBtn);
+  targetSpan.appendChild(checkbox);
 }
 
 function toggleDoneFromButton(btn, li, question_name) {
@@ -436,11 +684,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     var list = document.getElementById('questions-list1');
     if (list) {
       var loggedNames = new Set(request.questionNames || []);
+      var todoSet = new Set(request.todoNames || []);
       list.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
         var nameSpan = li.querySelector('span');
         var name = nameSpan ? nameSpan.textContent.trim() : null;
         if (name && loggedNames.has(name)) li.classList.add('done');
         else li.classList.remove('done');
+        
+        if (name) li.classList.toggle('ib-todo', todoSet.has(name));
       });
       updateButtonStates(request.questionNames || [], request.favouriteNames || []);
     }

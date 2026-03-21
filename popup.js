@@ -22,7 +22,9 @@ async function markDoneOnPage() {
     if (!tab || !tab.url || !tab.url.includes('exam-mate.com')) return;
     var allNames = window.IB.allEntries.map(function (e) { return e.question_name; });
     var favNames = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
-    await chrome.tabs.sendMessage(tab.id, { action: 'markDone', questionNames: allNames, favouriteNames: favNames });
+    var today = new Date().toISOString().split('T')[0];
+    var todoNames = window.IB.allEntries.filter(function (e) { return e.todo_date === today; }).map(function (e) { return e.question_name; });
+    await chrome.tabs.sendMessage(tab.id, { action: 'markDone', questionNames: allNames, favouriteNames: favNames, todoNames: todoNames });
   } catch (e) { }
 }
 
@@ -57,6 +59,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   // Nav
   window.IB.previousView = 'log'; // Initial view
   document.getElementById('btn-log-view').addEventListener('click', function () { switchView('log'); });
+  document.getElementById('btn-today-view').addEventListener('click', function () { switchView('today'); });
   document.getElementById('btn-favourites-view').addEventListener('click', function () { switchView('favourites'); });
   document.getElementById('btn-db-view').addEventListener('click', function () { switchView('db'); });
   document.getElementById('btn-settings-view').addEventListener('click', function () { switchView('settings'); });
@@ -109,6 +112,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     else if (response) { window.IB.currentData = response; renderCurrentQuestion(response); }
     else showPageError('No data returned. Try refreshing ExamMate.');
   } catch (e) { showPageError('Could not read the page.\nRefresh ExamMate and try again.'); }
+});
+
+chrome.runtime.onMessage.addListener(function(request) {
+  if (request.action === 'switchToToday') {
+    switchView('today');
+  }
 });
 
 // ── Settings panel ────────────────────────────────────────────────────────────
@@ -249,6 +258,7 @@ async function syncFromFirestore(silent) {
     if (!silent) showMsg('success', 'Synced ' + remote.length + ' questions from Firestore.');
     if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
     if (document.getElementById('panel-favourites').classList.contains('active')) renderFavouritesPanel();
+    if (document.getElementById('panel-today').classList.contains('active')) renderTodayPanel();
     if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
     await markDoneOnPage();
   } catch (e) {
@@ -266,12 +276,13 @@ function switchView(view) {
     showStatusToast();
   }
 
-  ['log', 'favourites', 'db', 'settings'].forEach(function (v) {
+  ['log', 'today', 'favourites', 'db', 'settings'].forEach(function (v) {
     var p = document.getElementById('panel-' + v);
     if (p) p.classList.toggle('active', v === view);
     var btn = document.getElementById('btn-' + v + '-view');
     if (btn) btn.classList.toggle('active-tab', v === view);
   });
+  if (view === 'today') renderTodayPanel();
   if (view === 'db') renderDBPanel();
   if (view === 'favourites') renderFavouritesPanel();
   if (view === 'settings') populateSettingsUI();
@@ -450,6 +461,85 @@ function showQpMsg(type, text) {
   var el = document.getElementById('qp-msg');
   el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block';
   setTimeout(function () { el.style.display = 'none'; }, 3000);
+}
+
+// ── Today panel ───────────────────────────────────────────────────────────────
+
+function renderTodayPanel() {
+  var today = new Date().toISOString().split('T')[0];
+  var todayItems = window.IB.allEntries.filter(function(e) { 
+    return e.todo_date === today; 
+  });
+  var doneCount = todayItems.filter(function(e) {
+    return !!e.logged_at; 
+  }).length;
+
+  var panel = document.getElementById('panel-today');
+  if (!panel) return;
+  
+  if (todayItems.length === 0) {
+    panel.innerHTML = '<div class="empty-today">No questions queued for today.<br>' +
+      'Use the ☐ Select button in the<br>ExamMate sidebar to build your queue.</div>';
+    return;
+  }
+
+  var pct = Math.round((doneCount / todayItems.length) * 100);
+  
+  panel.innerHTML =
+    '<div class="today-progress">' +
+      '<span>' + doneCount + ' / ' + todayItems.length + ' done</span>' +
+      '<div class="today-progress-bar">' +
+        '<div class="today-progress-fill" style="width:' + pct + '%"></div>' +
+      '</div>' +
+      '<button class="today-clear-btn" id="today-clear-btn">Clear queue</button>' +
+    '</div>' +
+    '<div id="today-list">' +
+    todayItems.map(function(e) {
+      var isDone = !!e.logged_at; 
+      var subjectNames = e.subject || 'other';
+      var topics = e.old_topics || '';
+      return '<div class="today-item' + (isDone ? ' is-done' : '') + '">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="today-name" title="' + (e.question_name || '') + '">' + 
+            (e.question_name || '—') + '</div>' +
+          '<div class="today-meta">' + subjectNames + 
+            (topics ? ' · ' + topics.split(',').slice(0,2).map(function(t) { return t.trim(); }).join(', ') : '') + '</div>' +
+        '</div>' +
+        '<button class="today-remove-btn" data-name="' + (e.question_name || '') + 
+          '" data-subject="' + subjectNames + '">Remove</button>' +
+      '</div>';
+    }).join('') +
+    '</div>';
+
+  panel.querySelectorAll('.today-remove-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      var name = this.getAttribute('data-name');
+      var entry = window.IB.allEntries.find(function(e) { return e.question_name === name; });
+      if (entry) {
+        btn.textContent = '...'; btn.disabled = true;
+        entry.todo_date = null;
+        await window.IB.saveCache(window.IB.allEntries);
+        if (useFirebase()) await window.IB.fsWrite(entry);
+        await markDoneOnPage();
+        renderTodayPanel();
+      }
+    });
+  });
+
+  document.getElementById('today-clear-btn').addEventListener('click', async function() {
+    if (!confirm('Clear all ' + todayItems.length + ' questions from today\'s queue?')) return;
+    var btn = this;
+    btn.textContent = '...'; btn.disabled = true;
+    todayItems.forEach(function(e) { e.todo_date = null; });
+    await window.IB.saveCache(window.IB.allEntries);
+    if (useFirebase()) {
+      for (var i = 0; i < todayItems.length; i++) {
+        try { await window.IB.fsWrite(todayItems[i]); } catch(_) {}
+      }
+    }
+    await markDoneOnPage();
+    renderTodayPanel();
+  });
 }
 
 // ── Favourites panel ──────────────────────────────────────────────────────────
