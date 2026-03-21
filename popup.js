@@ -20,10 +20,10 @@ async function markDoneOnPage() {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     var tab = tabs[0];
     if (!tab || !tab.url || !tab.url.includes('exam-mate.com')) return;
-    var allNames = window.IB.allEntries.map(function(e) { return e.question_name; });
-    var favNames = window.IB.allEntries.filter(function(e) { return e.is_favourite === true; }).map(function(e) { return e.question_name; });
+    var allNames = window.IB.allEntries.map(function (e) { return e.question_name; });
+    var favNames = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
     await chrome.tabs.sendMessage(tab.id, { action: 'markDone', questionNames: allNames, favouriteNames: favNames });
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // ── Sync button state ─────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ function updateSyncBtnState() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', async function() {
+document.addEventListener('DOMContentLoaded', async function () {
   window.IB.appSettings = await window.IB.loadSettings();
 
   // Validate credentials silently on load if Firebase mode
@@ -56,37 +56,33 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Nav
   window.IB.previousView = 'log'; // Initial view
-  document.getElementById('btn-log-view').addEventListener('click', function() { switchView('log'); });
-  document.getElementById('btn-questions-view').addEventListener('click', function() { switchView('questions'); });
-  document.getElementById('btn-favourites-view').addEventListener('click', function() { switchView('favourites'); });
-  document.getElementById('btn-db-view').addEventListener('click', function() { switchView('db'); });
-  document.getElementById('btn-settings-view').addEventListener('click', function() { switchView('settings'); });
+  document.getElementById('btn-log-view').addEventListener('click', function () { switchView('log'); });
+  document.getElementById('btn-favourites-view').addEventListener('click', function () { switchView('favourites'); });
+  document.getElementById('btn-db-view').addEventListener('click', function () { switchView('db'); });
+  document.getElementById('btn-settings-view').addEventListener('click', function () { switchView('settings'); });
 
   // Log panel
   document.getElementById('log-btn').addEventListener('click', logCurrent);
   document.getElementById('log-all-btn').addEventListener('click', logAll);
 
   // DB panel
-  document.getElementById('sync-btn').addEventListener('click', function() { syncFromFirestore(false); });
+  document.getElementById('sync-btn').addEventListener('click', function () { syncFromFirestore(false); });
   document.getElementById('export-btn').addEventListener('click', exportJSON);
   document.getElementById('clear-btn').addEventListener('click', clearAll);
   document.getElementById('db-filter').addEventListener('input', renderEntryList);
-  document.getElementById('more-btn').addEventListener('click', function(e) {
+  document.getElementById('more-btn').addEventListener('click', function (e) {
     e.stopPropagation();
     document.getElementById('more-dropdown').classList.toggle('open');
   });
-  document.addEventListener('click', function() { document.getElementById('more-dropdown').classList.remove('open'); });
-
-  // Questions panel
-  document.getElementById('qp-refresh-btn').addEventListener('click', loadQuestionsPanel);
+  document.addEventListener('click', function () { document.getElementById('more-dropdown').classList.remove('open'); });
 
   // Favourites panel
   document.getElementById('fav-filter').addEventListener('input', renderFavouritesPanel);
 
   // Settings
   document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
-  document.getElementById('mode-local').addEventListener('click', function() { setMode('local'); });
-  document.getElementById('mode-firebase').addEventListener('click', function() { setMode('firebase'); });
+  document.getElementById('mode-local').addEventListener('click', function () { setMode('local'); });
+  document.getElementById('mode-firebase').addEventListener('click', function () { setMode('firebase'); });
 
   // Load cache, update sync btn state, populate settings
   window.IB.allEntries = await window.IB.loadCache();
@@ -232,7 +228,7 @@ async function saveSettings() {
 
   if (window.IB.credentialsValid || mode === 'local') {
     savedEl.style.display = 'block';
-    setTimeout(function() { savedEl.style.display = 'none'; }, 2500);
+    setTimeout(function () { savedEl.style.display = 'none'; }, 2500);
     if (useFirebase()) syncFromFirestore(false);
   }
 }
@@ -252,7 +248,6 @@ async function syncFromFirestore(silent) {
     await window.IB.saveCache(window.IB.allEntries);
     if (!silent) showMsg('success', 'Synced ' + remote.length + ' questions from Firestore.');
     if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
-    if (document.getElementById('panel-questions').classList.contains('active')) renderQuestionsPanel();
     if (document.getElementById('panel-favourites').classList.contains('active')) renderFavouritesPanel();
     if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
     await markDoneOnPage();
@@ -270,22 +265,22 @@ function switchView(view) {
   if (window.IB.previousView === 'settings' && view !== 'settings') {
     showStatusToast();
   }
-  
-  ['log','questions','favourites','db','settings'].forEach(function(v) {
-    document.getElementById('panel-' + v).classList.toggle('active', v === view);
+
+  ['log', 'favourites', 'db', 'settings'].forEach(function (v) {
+    var p = document.getElementById('panel-' + v);
+    if (p) p.classList.toggle('active', v === view);
     var btn = document.getElementById('btn-' + v + '-view');
     if (btn) btn.classList.toggle('active-tab', v === view);
   });
   if (view === 'db') renderDBPanel();
-  if (view === 'questions') loadQuestionsPanel();
   if (view === 'favourites') renderFavouritesPanel();
   if (view === 'settings') populateSettingsUI();
-  
+
   window.IB.previousView = view;
 }
 
 function showStatusToast() {
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (tabs[0] && tabs[0].url.includes('exam-mate.com')) {
       chrome.tabs.sendMessage(tabs[0].id, {
         action: 'showToast',
@@ -312,9 +307,9 @@ function renderCurrentQuestion(data) {
   document.getElementById('a-img-count').textContent = data.answer_imgs.length + ' A';
   var topicsEl = document.getElementById('old-topics-val');
   if (data.old_topics) {
-    topicsEl.innerHTML = data.old_topics.split(',').map(function(t) { return '<span class="tag-pill">' + t.trim() + '</span>'; }).join('');
+    topicsEl.innerHTML = data.old_topics.split(',').map(function (t) { return '<span class="tag-pill">' + t.trim() + '</span>'; }).join('');
   } else { topicsEl.textContent = 'None found'; }
-  var logged = window.IB.allEntries.some(function(e) { return e.question_name === data.question_name; });
+  var logged = window.IB.allEntries.some(function (e) { return e.question_name === data.question_name; });
   document.getElementById('already-logged-row').style.display = logged ? 'flex' : 'none';
   var logBtn = document.getElementById('log-btn');
   logBtn.disabled = false; logBtn.classList.remove('success');
@@ -334,7 +329,7 @@ async function logCurrent() {
       window.IB.allEntries = window.IB.mergeEntries(await window.IB.fsReadAll(), window.IB.allEntries);
       await window.IB.saveCache(window.IB.allEntries);
     }
-    var ex = window.IB.allEntries.find(function(e) { return e.question_name === window.IB.currentData.question_name; });
+    var ex = window.IB.allEntries.find(function (e) { return e.question_name === window.IB.currentData.question_name; });
     if (ex) {
       if (ex.new_chapters && ex.new_chapters.length > 0) window.IB.currentData.new_chapters = ex.new_chapters;
       if (typeof ex.is_favourite !== 'undefined') window.IB.currentData.is_favourite = ex.is_favourite;
@@ -343,7 +338,7 @@ async function logCurrent() {
     window.IB.currentData.logged_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
     document.getElementById('log-btn-text').textContent = 'Saving...';
     if (useFirebase()) await window.IB.fsWrite(window.IB.currentData);
-    window.IB.allEntries = window.IB.allEntries.filter(function(e) { return e.question_name !== window.IB.currentData.question_name; });
+    window.IB.allEntries = window.IB.allEntries.filter(function (e) { return e.question_name !== window.IB.currentData.question_name; });
     window.IB.allEntries.unshift(window.IB.currentData);
     await window.IB.saveCache(window.IB.allEntries);
     logBtn.classList.add('success');
@@ -351,7 +346,7 @@ async function logCurrent() {
     document.getElementById('already-logged-row').style.display = 'flex';
     showMsg('success', '"' + window.IB.currentData.question_name + '" saved' + (useFirebase() ? ' to Firestore' : ' locally') + '.');
     await markDoneOnPage();
-    setTimeout(function() { logBtn.classList.remove('success'); logBtn.disabled = false; document.getElementById('log-btn-text').textContent = 'Log again (update)'; }, 2000);
+    setTimeout(function () { logBtn.classList.remove('success'); logBtn.disabled = false; document.getElementById('log-btn-text').textContent = 'Log again (update)'; }, 2000);
   } catch (e) {
     logBtn.disabled = false; document.getElementById('log-btn-text').textContent = 'Log this question';
     showMsg('error', 'Error: ' + e.message);
@@ -381,16 +376,16 @@ async function logAll() {
       if (typeof q.is_favourite === 'undefined') q.is_favourite = false;
       btn.textContent = 'Writing (' + (i + 1) + '/' + questions.length + ')...';
       try {
-        var ex = window.IB.allEntries.find(function(e) { return e.question_name === q.question_name; });
+        var ex = window.IB.allEntries.find(function (e) { return e.question_name === q.question_name; });
         if (ex) {
           if (ex.new_chapters && ex.new_chapters.length > 0) q.new_chapters = ex.new_chapters;
           if (ex.is_favourite) q.is_favourite = ex.is_favourite; // preserve fav state
         }
-        var isNew = !window.IB.allEntries.some(function(e) { return e.question_name === q.question_name; });
+        var isNew = !window.IB.allEntries.some(function (e) { return e.question_name === q.question_name; });
         if (useFirebase()) await window.IB.fsWrite(q);
         if (isNew) { window.IB.allEntries.unshift(q); added++; }
-        else { var idx = window.IB.allEntries.findIndex(function(e) { return e.question_name === q.question_name; }); if (idx !== -1) window.IB.allEntries[idx] = q; updated++; }
-        if (useFirebase()) await new Promise(function(r) { setTimeout(r, 100); });
+        else { var idx = window.IB.allEntries.findIndex(function (e) { return e.question_name === q.question_name; }); if (idx !== -1) window.IB.allEntries[idx] = q; updated++; }
+        if (useFirebase()) await new Promise(function (r) { setTimeout(r, 100); });
       } catch (e) { failed++; }
     }
     await window.IB.saveCache(window.IB.allEntries);
@@ -424,10 +419,10 @@ function renderQuestionsPanel() {
   var listEl = document.getElementById('qp-list');
   var countEl = document.getElementById('qp-count');
   if (window.IB.sidebarQuestions.length === 0) { countEl.textContent = '0 questions'; listEl.innerHTML = '<div class="qp-loading">No questions found.</div>'; return; }
-  var loggedNames = new Set(window.IB.allEntries.map(function(e) { return e.question_name; }));
-  var doneCount = window.IB.sidebarQuestions.filter(function(q) { return loggedNames.has(q.question_name); }).length;
+  var loggedNames = new Set(window.IB.allEntries.map(function (e) { return e.question_name; }));
+  var doneCount = window.IB.sidebarQuestions.filter(function (q) { return loggedNames.has(q.question_name); }).length;
   countEl.textContent = window.IB.sidebarQuestions.length + ' questions · ' + doneCount + ' done';
-  listEl.innerHTML = window.IB.sidebarQuestions.map(function(q) {
+  listEl.innerHTML = window.IB.sidebarQuestions.map(function (q) {
     var isDone = loggedNames.has(q.question_name);
     var isActive = q.is_active;
     var cls = (isDone && isActive) ? 'state-active-done' : isDone ? 'state-done' : isActive ? 'state-active' : '';
@@ -435,13 +430,13 @@ function renderQuestionsPanel() {
     var redoBtn = isDone ? '<button class="redo-btn" data-name="' + q.question_name + '" data-subject="' + q.subject + '">Redo</button>' : '';
     return '<div class="qp-item ' + cls + '"><div style="flex:1;min-width:0;"><div class="qp-item-name" title="' + q.question_name + '">' + q.question_name + '</div>' + (meta ? '<div class="qp-item-meta">' + meta + '</div>' : '') + '</div>' + redoBtn + '</div>';
   }).join('');
-  listEl.querySelectorAll('.redo-btn').forEach(function(btn) {
-    btn.addEventListener('click', async function() {
+  listEl.querySelectorAll('.redo-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
       var name = this.getAttribute('data-name'), subj = this.getAttribute('data-subject');
       this.textContent = '...'; this.disabled = true;
       try {
         if (useFirebase()) await window.IB.fsDelete(subj, name);
-        window.IB.allEntries = window.IB.allEntries.filter(function(e) { return e.question_name !== name; });
+        window.IB.allEntries = window.IB.allEntries.filter(function (e) { return e.question_name !== name; });
         await window.IB.saveCache(window.IB.allEntries); await markDoneOnPage();
         if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
         renderQuestionsPanel();
@@ -454,18 +449,18 @@ function renderQuestionsPanel() {
 function showQpMsg(type, text) {
   var el = document.getElementById('qp-msg');
   el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block';
-  setTimeout(function() { el.style.display = 'none'; }, 3000);
+  setTimeout(function () { el.style.display = 'none'; }, 3000);
 }
 
 // ── Favourites panel ──────────────────────────────────────────────────────────
 
 function renderFavouritesPanel() {
   var filter = (document.getElementById('fav-filter').value || '').toLowerCase();
-  var favs = window.IB.allEntries.filter(function(e) { return e.is_favourite === true; });
-  var filtered = filter ? favs.filter(function(e) {
-    return (e.question_name||'').toLowerCase().includes(filter) ||
-           (e.subject||'').toLowerCase().includes(filter) ||
-           (e.old_topics||'').toLowerCase().includes(filter);
+  var favs = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; });
+  var filtered = filter ? favs.filter(function (e) {
+    return (e.question_name || '').toLowerCase().includes(filter) ||
+      (e.subject || '').toLowerCase().includes(filter) ||
+      (e.old_topics || '').toLowerCase().includes(filter);
   }) : favs;
 
   document.getElementById('fav-count').textContent = favs.length + ' favourite' + (favs.length !== 1 ? 's' : '') + (filter ? ' · ' + filtered.length + ' shown' : '');
@@ -480,32 +475,32 @@ function renderFavouritesPanel() {
     return;
   }
 
-  listEl.innerHTML = filtered.map(function(e) {
+  listEl.innerHTML = filtered.map(function (e) {
     var isDone = true; // if it's in allEntries it's done (logged)
     var doneBadge = isDone ? '<span class="fav-done-badge">✓ done</span>' : '';
-    var qCount = (e.question_imgs||[]).length;
-    var aCount = (e.answer_imgs||[]).length;
+    var qCount = (e.question_imgs || []).length;
+    var aCount = (e.answer_imgs || []).length;
     return '<div class="fav-item">' +
       '<div class="fav-heart">♥</div>' +
       '<div style="flex:1;min-width:0;">' +
-        '<div class="fav-name">' + (e.question_name||'—') + doneBadge + '</div>' +
-        '<div class="fav-meta">' + (e.subject||'') + ' · ' + qCount + 'Q ' + aCount + 'A · ' + (e.logged_at||'') + '</div>' +
-        (e.old_topics ? '<div class="fav-meta" style="margin-top:2px;">' + e.old_topics.split(',').slice(0,2).map(function(t){return t.trim();}).join(', ') + '</div>' : '') +
+      '<div class="fav-name">' + (e.question_name || '—') + doneBadge + '</div>' +
+      '<div class="fav-meta">' + (e.subject || '') + ' · ' + qCount + 'Q ' + aCount + 'A · ' + (e.logged_at || '') + '</div>' +
+      (e.old_topics ? '<div class="fav-meta" style="margin-top:2px;">' + e.old_topics.split(',').slice(0, 2).map(function (t) { return t.trim(); }).join(', ') + '</div>' : '') +
       '</div>' +
       '<div class="fav-actions">' +
-        '<button class="fav-unfav-btn" data-name="' + (e.question_name||'') + '" data-subject="' + (e.subject||'other') + '">♡ Unfav</button>' +
+      '<button class="fav-unfav-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">♡ Unfav</button>' +
       '</div>' +
-    '</div>';
+      '</div>';
   }).join('');
 
-  listEl.querySelectorAll('.fav-unfav-btn').forEach(function(btn) {
-    btn.addEventListener('click', async function() {
+  listEl.querySelectorAll('.fav-unfav-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
       var name = this.getAttribute('data-name');
       var subj = this.getAttribute('data-subject');
       this.textContent = '...'; this.disabled = true;
       try {
         // Set is_favourite = false on the entry (keep it as done)
-        var entry = window.IB.allEntries.find(function(e) { return e.question_name === name; });
+        var entry = window.IB.allEntries.find(function (e) { return e.question_name === name; });
         if (entry) {
           entry.is_favourite = false;
           await window.IB.saveCache(window.IB.allEntries);
@@ -522,41 +517,41 @@ function renderFavouritesPanel() {
 function showFavMsg(type, text) {
   var el = document.getElementById('fav-msg');
   el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block';
-  setTimeout(function() { el.style.display = 'none'; }, 3000);
+  setTimeout(function () { el.style.display = 'none'; }, 3000);
 }
 
 // ── DB panel ──────────────────────────────────────────────────────────────────
 
 function renderDBPanel() {
-  var subjects = new Set(window.IB.allEntries.map(function(e) { return e.subject; }));
+  var subjects = new Set(window.IB.allEntries.map(function (e) { return e.subject; }));
   document.getElementById('stat-total').textContent = window.IB.allEntries.length;
-  document.getElementById('stat-tagged').textContent = window.IB.allEntries.filter(function(e) { return e.new_chapters && e.new_chapters.length > 0; }).length;
+  document.getElementById('stat-tagged').textContent = window.IB.allEntries.filter(function (e) { return e.new_chapters && e.new_chapters.length > 0; }).length;
   document.getElementById('stat-subjects').textContent = subjects.size;
   renderEntryList();
 }
 
 function renderEntryList() {
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
-  var filtered = window.IB.allEntries.filter(function(e) {
+  var filtered = window.IB.allEntries.filter(function (e) {
     if (!filter) return true;
-    return (e.question_name||'').toLowerCase().includes(filter) || (e.subject||'').toLowerCase().includes(filter) || (e.old_topics||'').toLowerCase().includes(filter);
+    return (e.question_name || '').toLowerCase().includes(filter) || (e.subject || '').toLowerCase().includes(filter) || (e.old_topics || '').toLowerCase().includes(filter);
   });
   var listEl = document.getElementById('entry-list');
   if (filtered.length === 0) {
     listEl.innerHTML = '<div class="empty-db">' + (window.IB.allEntries.length === 0 ? 'No questions logged yet.<br>Go to an ExamMate page and log questions.' : 'No results for "' + filter + '"') + '</div>';
     return;
   }
-  listEl.innerHTML = filtered.map(function(e) {
-    var chips = (e.new_chapters && e.new_chapters.length > 0) ? e.new_chapters.map(function(c){return '<span class="entry-chip">'+c+'</span>';}).join('') : '<span class="entry-chip blank">untagged</span>';
+  listEl.innerHTML = filtered.map(function (e) {
+    var chips = (e.new_chapters && e.new_chapters.length > 0) ? e.new_chapters.map(function (c) { return '<span class="entry-chip">' + c + '</span>'; }).join('') : '<span class="entry-chip blank">untagged</span>';
     var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
-    return '<div class="entry-item"><div style="flex:1;min-width:0;"><div class="entry-name">' + (e.question_name||'—') + favIcon + '</div><div class="entry-meta">' + (e.subject||'') + ' · ' + (e.question_imgs||[]).length + 'Q ' + (e.answer_imgs||[]).length + 'A · ' + (e.logged_at||'') + '</div><div class="entry-chips">'+chips+'</div></div><button class="del-btn" data-name="'+(e.question_name||'')+'" data-subject="'+(e.subject||'other')+'">✕</button></div>';
+    return '<div class="entry-item"><div style="flex:1;min-width:0;"><div class="entry-name">' + (e.question_name || '—') + favIcon + '</div><div class="entry-meta">' + (e.subject || '') + ' · ' + (e.question_imgs || []).length + 'Q ' + (e.answer_imgs || []).length + 'A · ' + (e.logged_at || '') + '</div><div class="entry-chips">' + chips + '</div></div><button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button></div>';
   }).join('');
-  listEl.querySelectorAll('.del-btn').forEach(function(btn) {
-    btn.addEventListener('click', async function() {
+  listEl.querySelectorAll('.del-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
       var name = this.getAttribute('data-name'), subj = this.getAttribute('data-subject');
       try {
         if (useFirebase()) await window.IB.fsDelete(subj, name);
-        window.IB.allEntries = window.IB.allEntries.filter(function(e) { return e.question_name !== name; });
+        window.IB.allEntries = window.IB.allEntries.filter(function (e) { return e.question_name !== name; });
         await window.IB.saveCache(window.IB.allEntries); await markDoneOnPage(); renderDBPanel();
       } catch (e) { showMsg('error', 'Delete failed: ' + e.message); }
     });
@@ -568,26 +563,26 @@ function renderEntryList() {
 function exportJSON() {
   if (window.IB.allEntries.length === 0) { showMsg('error', 'Nothing to export yet.'); return; }
   var grouped = {};
-  window.IB.allEntries.forEach(function(e) { var s = e.subject||'other'; if(!grouped[s]) grouped[s]={PYQS:[]}; grouped[s].PYQS.push(e); });
+  window.IB.allEntries.forEach(function (e) { var s = e.subject || 'other'; if (!grouped[s]) grouped[s] = { PYQS: [] }; grouped[s].PYQS.push(e); });
   var blob = new Blob([JSON.stringify(grouped, null, 2)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
-  var a = document.createElement('a'); a.href=url; a.download='ib_db_'+new Date().toISOString().split('T')[0]+'.json'; a.click(); URL.revokeObjectURL(url);
+  var a = document.createElement('a'); a.href = url; a.download = 'ib_db_' + new Date().toISOString().split('T')[0] + '.json'; a.click(); URL.revokeObjectURL(url);
 }
 
 async function clearAll() {
   if (!confirm('Delete ALL ' + window.IB.allEntries.length + ' questions? Cannot be undone.')) return;
-  if (useFirebase()) { for(var i=0;i<window.IB.allEntries.length;i++){try{await window.IB.fsDelete(window.IB.allEntries[i].subject,window.IB.allEntries[i].question_name);}catch(_){}} }
-  window.IB.allEntries=[]; await window.IB.saveCache([]); await markDoneOnPage(); renderDBPanel();
-  showMsg('success','All cleared.');
+  if (useFirebase()) { for (var i = 0; i < window.IB.allEntries.length; i++) { try { await window.IB.fsDelete(window.IB.allEntries[i].subject, window.IB.allEntries[i].question_name); } catch (_) { } } }
+  window.IB.allEntries = []; await window.IB.saveCache([]); await markDoneOnPage(); renderDBPanel();
+  showMsg('success', 'All cleared.');
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
-function showMsg(type,text){var el=document.getElementById('inline-msg');if(!el)return;el.textContent=text;el.className='inline-msg '+type;el.style.display='block';}
-function clearMsg(){var el=document.getElementById('inline-msg');if(el)el.style.display='none';}
+function showMsg(type, text) { var el = document.getElementById('inline-msg'); if (!el) return; el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block'; }
+function clearMsg() { var el = document.getElementById('inline-msg'); if (el) el.style.display = 'none'; }
 
 // Also handle popup unload (to show toast if closing from Settings view)
-window.addEventListener('blur', function() {
+window.addEventListener('blur', function () {
   if (window.IB.previousView === 'settings') {
     showStatusToast();
   }

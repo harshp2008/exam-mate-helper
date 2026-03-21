@@ -137,29 +137,76 @@ function removeLoadingOverlay() {
   if (el) { clearInterval(el._interval); el.remove(); }
 }
 
-// ── Done checkboxes ───────────────────────────────────────────────────────────
+// ── Done checkboxes & State Re-sync ───────────────────────────────────────────
+
+var ibInjectionTimeout = null;
+var ibStateSyncInProgress = false;
 
 function injectDoneCheckboxes() {
-  if (IB_CHECKBOXES_INJECTED) return;
   var list = document.getElementById('questions-list1');
   if (!list) return;
-  IB_CHECKBOXES_INJECTED = true;
 
+  // 1. Inject checkboxes into any <li> that doesn't have them yet.
   list.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
     injectCheckboxIntoLi(li);
   });
 
-  // Watch for dynamically added li items (pagination / lazy load)
-  var observer = new MutationObserver(function (mutations) {
-    mutations.forEach(function (m) {
-      m.addedNodes.forEach(function (node) {
-        if (node.nodeType === 1 && node.tagName === 'LI' && node.id && node.id.startsWith('qid-')) {
-          injectCheckboxIntoLi(node);
-        }
-      });
+  // 2. Fetch current state from background to ensure UI is accurate
+  //    (especially after a Livewire refresh of the list)
+  if (!ibStateSyncInProgress) {
+    ibStateSyncInProgress = true;
+    chrome.runtime.sendMessage({ action: 'requestSyncState' }, function(response) {
+      ibStateSyncInProgress = false;
+      if (!response) return;
+      var doneNames = new Set(response.questionNames || []);
+      var favNames = new Set(response.favouriteNames || []);
+      
+      var currentList = document.getElementById('questions-list1');
+      if (currentList) {
+        currentList.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
+          var nameSpan = li.querySelector('span');
+          var name = nameSpan ? nameSpan.textContent.trim() : null;
+          if (name && doneNames.has(name)) li.classList.add('done');
+          else li.classList.remove('done');
+        });
+        updateButtonStates(doneNames, favNames);
+      }
     });
+  }
+}
+
+// Set up a persistent observer on the body to catch when #questions-list1 is replaced/updated
+function setupPersistentObserver() {
+  if (window._ibPersistentObserver) return;
+  var observer = new MutationObserver(function(mutations) {
+    var needsInjection = false;
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      // Check if nodes were added
+      if (m.addedNodes.length > 0) {
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var node = m.addedNodes[j];
+          if (node.nodeType === 1) { // Element node
+            if (node.id === 'questions-list1' || node.querySelector('#questions-list1') || (node.tagName === 'LI' && node.id && node.id.startsWith('qid-'))) {
+              needsInjection = true;
+              break;
+            }
+          }
+        }
+      }
+      if (needsInjection) break;
+    }
+
+    if (needsInjection) {
+      clearTimeout(ibInjectionTimeout);
+      ibInjectionTimeout = setTimeout(function() {
+        injectDoneCheckboxes();
+      }, 150);
+    }
   });
-  observer.observe(list, { childList: true });
+  
+  observer.observe(document.body, { childList: true, subtree: true });
+  window._ibPersistentObserver = observer;
 }
 
 function injectCheckboxIntoLi(li) {
@@ -313,10 +360,11 @@ function updateButtonStates(doneNames, favNames) {
   // Show overlay immediately on page load — background will hide it once markDone arrives
   showLoadingOverlay('Syncing your progress...', 'Loading done questions from database');
 
-  // Wait for question list to appear then inject checkboxes
+  // Wait for question list to appear then setup exactly once
   function tryInject() {
     if (document.getElementById('questions-list1')) {
       injectDoneCheckboxes();
+      setupPersistentObserver();
     } else {
       setTimeout(tryInject, 300);
     }

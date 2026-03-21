@@ -76,25 +76,7 @@
     .del-btn:hover { color: #A32D2D; }
     .empty-db { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
 
-    /* Questions panel */
-    .qp-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
-    .qp-legend { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-    .qp-legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #666; }
-    .qp-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-    .qp-list { max-height: 320px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
-    .qp-item { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .qp-item:last-child { border-bottom: none; }
-    .qp-item.state-active { background: #E3F2FD; }
-    .qp-item.state-done { background: #E8F5E9; }
-    .qp-item.state-active-done { background: #FFF176; }
-    .qp-item-name { font-size: 12px; font-weight: 500; color: #1a1a1a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .qp-item-meta { font-size: 10px; color: #888; margin-top: 1px; }
-    .redo-btn { font-size: 10px; padding: 3px 8px; border: 1px solid #E24B4A; border-radius: 5px; background: #fff; color: #E24B4A; cursor: pointer; flex-shrink: 0; transition: background 0.1s; white-space: nowrap; }
-    .redo-btn:hover { background: #FCEBEB; }
-    .qp-loading { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
-    .qp-refresh-btn { padding: 5px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; background: #fafafa; color: #555; cursor: pointer; }
-    .qp-refresh-btn:hover { background: #f0f0f0; }
-    .qp-count { font-size: 11px; color: #888; flex: 1; }
+
 
     /* Favourites panel */
     .fav-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
@@ -153,7 +135,6 @@
   </div>
   <div class="header-right">
     <button class="hdr-btn active-tab" id="btn-log-view">Log</button>
-    <button class="hdr-btn" id="btn-questions-view">Page</button>
     <button class="hdr-btn" id="btn-favourites-view">♥ Favs</button>
     <button class="hdr-btn" id="btn-db-view">DB</button>
     <button class="hdr-btn" id="btn-settings-view">⚙</button>
@@ -195,23 +176,7 @@
     </div>
   </div>
 
-  <!-- ── Questions panel (UNCHANGED) ── -->
-  <div class="panel" id="panel-questions">
-    <div class="qp-toolbar">
-      <span class="qp-count" id="qp-count">—</span>
-      <button class="qp-refresh-btn" id="qp-refresh-btn">↻ Refresh</button>
-    </div>
-    <div class="qp-legend">
-      <span class="qp-legend-item"><span class="qp-dot" style="background:#FFF176;border:1px solid #F9A825;"></span>Active + done</span>
-      <span class="qp-legend-item"><span class="qp-dot" style="background:#E8F5E9;border:1px solid #4CAF50;"></span>Done</span>
-      <span class="qp-legend-item"><span class="qp-dot" style="background:#E3F2FD;border:1px solid #90CAF9;"></span>Active</span>
-      <span class="qp-legend-item"><span class="qp-dot" style="background:#fff;border:1px solid #ddd;"></span>Not done</span>
-    </div>
-    <div class="qp-list" id="qp-list">
-      <div class="qp-loading">Click ↻ Refresh to load questions from this page.</div>
-    </div>
-    <div class="inline-msg" id="qp-msg" style="margin-top:8px;"></div>
-  </div>
+
 
   <!-- ── Favourites panel (NEW) ── -->
   <div class="panel" id="panel-favourites">
