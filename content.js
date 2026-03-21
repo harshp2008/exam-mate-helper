@@ -442,7 +442,7 @@ function toggleSelectMode() {
     
     if (toolbarRow) {
       Array.from(toolbarRow.children).forEach(function(li) {
-        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item' || !li.classList.contains('nav-item')) {
+        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item' || li.id === 'ib-todo-info-nav-item' || !li.classList.contains('nav-item')) {
           li.style.display = 'none';
         } else {
           li.style.display = 'block';
