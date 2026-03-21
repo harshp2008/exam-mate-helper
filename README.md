@@ -1,6 +1,6 @@
 # Exammate Helper
 
-**The ultimate Chrome extension for IB students to streamline their ExamMate practice.**  
+**An Chrome extension for IB students to streamline their Exam-mate practice.**  
 Exammate Helper helps declutter the ExamMate UI into a clean UI and gives you the tools to track every question you've ever attempted.
 
 ---
