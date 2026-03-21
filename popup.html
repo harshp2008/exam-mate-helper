@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>IB Exam Logger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 400px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #1a1a1a; background: #fff; }
+    .header { background: #185FA5; color: white; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .header-title { font-size: 14px; font-weight: 600; }
+    .header-sub { font-size: 11px; opacity: 0.75; margin-top: 2px; }
+    .header-right { display: flex; gap: 4px; }
+    .hdr-btn { background: none; border: 1px solid rgba(255,255,255,0.4); color: white; padding: 4px 8px; border-radius: 5px; cursor: pointer; font-size: 11px; transition: background 0.15s; white-space: nowrap; }
+    .hdr-btn:hover { background: rgba(255,255,255,0.2); }
+    .hdr-btn.active-tab { background: rgba(255,255,255,0.25); }
+    .body { padding: 14px 16px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Log panel */
+    .q-card { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+    .q-card-header { background: #f5f8fc; padding: 8px 12px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: space-between; }
+    .q-name { font-size: 13px; font-weight: 600; color: #185FA5; }
+    .subject-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #E6F1FB; color: #185FA5; font-weight: 500; }
+    .q-card-body { padding: 10px 12px; }
+    .info-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #555; margin-bottom: 6px; }
+    .info-label { min-width: 72px; color: #999; flex-shrink: 0; }
+    .info-val { color: #1a1a1a; line-height: 1.5; }
+    .tag-pill { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 8px; background: #f0f0f0; color: #666; margin: 1px 2px 1px 0; }
+    .img-count-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
+    .img-count-badge.q { background: #E1F5EE; color: #0F6E56; }
+    .img-count-badge.a { background: #FAEEDA; color: #854F0B; }
+    .log-btn { width: 100%; padding: 11px; background: #185FA5; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s, transform 0.08s; user-select: none; margin-bottom: 8px; }
+    .log-btn:hover:not(:disabled) { background: #0C447C; }
+    .log-btn:active:not(:disabled) { transform: scale(0.97); }
+    .log-btn:disabled { background: #aaa; cursor: not-allowed; }
+    .log-btn.success { background: #0F6E56; }
+    .log-all-btn { width: 100%; padding: 8px; background: #fff; color: #185FA5; border: 1px solid #185FA5; border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 500; transition: background 0.15s, transform 0.08s; user-select: none; }
+    .log-all-btn:hover { background: #E6F1FB; }
+    .log-all-btn:active { transform: scale(0.97); }
+    .inline-msg { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; display: none; }
+    .inline-msg.error { background: #FCEBEB; border: 1px solid #f7c1c1; color: #A32D2D; }
+    .inline-msg.success { background: #E1F5EE; border: 1px solid #9FE1CB; color: #0F6E56; }
+    .no-page { text-align: center; padding: 24px 16px; color: #888; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+
+    /* Database panel */
+    .db-toolbar { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+    .db-filter { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; color: #1a1a1a; background: #fafafa; }
+    .db-filter:focus { outline: none; border-color: #185FA5; }
+    .db-action-btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; background: #fafafa; color: #555; cursor: pointer; transition: background 0.1s, transform 0.08s; white-space: nowrap; flex-shrink: 0; }
+    .db-action-btn:hover:not(:disabled) { background: #f0f0f0; }
+    .db-action-btn:active { transform: scale(0.96); }
+    .db-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .more-menu { position: relative; flex-shrink: 0; }
+    .more-btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fafafa; color: #555; cursor: pointer; transition: background 0.1s; line-height: 1; }
+    .more-btn:hover { background: #f0f0f0; }
+    .more-dropdown { display: none; position: absolute; right: 0; top: 110%; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 100; min-width: 130px; overflow: hidden; }
+    .more-dropdown.open { display: block; }
+    .more-item { padding: 9px 14px; font-size: 12px; cursor: pointer; color: #333; transition: background 0.1s; display: block; width: 100%; text-align: left; border: none; background: none; }
+    .more-item:hover { background: #f5f5f5; }
+    .more-item.danger { color: #A32D2D; }
+    .more-item.danger:hover { background: #FCEBEB; }
+    .db-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+    .stat-card { background: #f5f5f5; border-radius: 6px; padding: 8px 10px; text-align: center; }
+    .stat-val { font-size: 18px; font-weight: 600; color: #185FA5; }
+    .stat-label { font-size: 10px; color: #888; margin-top: 2px; }
+    .entry-list { max-height: 280px; overflow-y: auto; }
+    .entry-item { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .entry-item:hover { background: #fafafa; }
+    .entry-name { font-size: 12px; font-weight: 500; color: #1a1a1a; }
+    .entry-meta { font-size: 10px; color: #999; margin-top: 2px; }
+    .entry-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .entry-chip { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #E6F1FB; color: #185FA5; }
+    .entry-chip.blank { background: #f5f5f5; color: #bbb; }
+    .del-btn { font-size: 11px; color: #ccc; cursor: pointer; padding: 2px 4px; border: none; background: none; flex-shrink: 0; transition: color 0.1s; }
+    .del-btn:hover { color: #A32D2D; }
+    .empty-db { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
+
+    /* Questions panel */
+    .qp-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+    .qp-legend { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .qp-legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #666; }
+    .qp-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .qp-list { max-height: 320px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+    .qp-item { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .qp-item:last-child { border-bottom: none; }
+    .qp-item.state-active { background: #E3F2FD; }
+    .qp-item.state-done { background: #E8F5E9; }
+    .qp-item.state-active-done { background: #FFF176; }
+    .qp-item-name { font-size: 12px; font-weight: 500; color: #1a1a1a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .qp-item-meta { font-size: 10px; color: #888; margin-top: 1px; }
+    .redo-btn { font-size: 10px; padding: 3px 8px; border: 1px solid #E24B4A; border-radius: 5px; background: #fff; color: #E24B4A; cursor: pointer; flex-shrink: 0; transition: background 0.1s; white-space: nowrap; }
+    .redo-btn:hover { background: #FCEBEB; }
+    .qp-loading { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
+    .qp-refresh-btn { padding: 5px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; background: #fafafa; color: #555; cursor: pointer; }
+    .qp-refresh-btn:hover { background: #f0f0f0; }
+    .qp-count { font-size: 11px; color: #888; flex: 1; }
+
+    /* Favourites panel */
+    .fav-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+    .fav-count { font-size: 11px; color: #888; flex: 1; }
+    .fav-filter { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; color: #1a1a1a; background: #fafafa; }
+    .fav-filter:focus { outline: none; border-color: #FF8F00; }
+    .fav-list { max-height: 340px; overflow-y: auto; }
+    .fav-item { padding: 9px 10px; border-bottom: 1px solid #FFF3E0; display: flex; align-items: flex-start; gap: 8px; }
+    .fav-item:last-child { border-bottom: none; }
+    .fav-item:hover { background: #FFFDE7; }
+    .fav-heart { font-size: 14px; color: #FF8F00; flex-shrink: 0; margin-top: 1px; }
+    .fav-name { font-size: 12px; font-weight: 500; color: #1a1a1a; }
+    .fav-meta { font-size: 10px; color: #999; margin-top: 2px; }
+    .fav-done-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 4px; background: #E8F5E9; color: #2E7D32; margin-left: 4px; }
+    .fav-actions { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; align-self: center; }
+    .fav-unfav-btn { font-size: 10px; padding: 3px 7px; border: 1px solid #FFB300; border-radius: 5px; background: #fff; color: #FF8F00; cursor: pointer; transition: background 0.1s; white-space: nowrap; }
+    .fav-unfav-btn:hover { background: #FFF8E1; }
+    .empty-fav { text-align: center; padding: 32px 16px; color: #aaa; font-size: 12px; line-height: 1.8; }
+    .empty-fav .fav-icon { font-size: 28px; margin-bottom: 8px; }
+
+    /* Settings panel */
+    .settings-section { margin-bottom: 18px; }
+    .settings-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+    .settings-row { margin-bottom: 10px; }
+    .settings-label { font-size: 12px; color: #555; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .badge-disabled { font-size: 9px; padding: 1px 5px; border-radius: 4px; background: #f0f0f0; color: #999; }
+    .settings-input { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; color: #1a1a1a; background: #fafafa; }
+    .settings-input:focus { outline: none; border-color: #185FA5; }
+    .settings-input:disabled { background: #f5f5f5; color: #bbb; cursor: not-allowed; }
+    .settings-hint { font-size: 10px; color: #aaa; margin-top: 3px; }
+    .settings-hint a { color: #185FA5; }
+    .mode-toggle { display: flex; gap: 8px; margin-bottom: 8px; }
+    .mode-btn { flex: 1; padding: 8px 7px; border: 1.5px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 12px; background: #fafafa; color: #888; transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.07s; text-align: center; user-select: none; }
+    .mode-btn:hover:not(.active) { background: #f0f0f0; border-color: #bbb; color: #555; }
+    .mode-btn:active { transform: scale(0.97); }
+    .mode-btn.active { background: #185FA5; border-color: #185FA5; color: #fff; font-weight: 600; box-shadow: 0 1px 4px rgba(24,95,165,0.25); }
+    .save-settings-btn { width: 100%; padding: 9px; background: #185FA5; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600; transition: background 0.15s; }
+    .save-settings-btn:hover { background: #0C447C; }
+    .save-settings-btn:active { transform: scale(0.98); }
+    .settings-saved { text-align: center; color: #0F6E56; font-size: 12px; margin-top: 8px; display: none; }
+    .settings-error { background: #FCEBEB; border: 1px solid #f7c1c1; color: #A32D2D; border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.5; margin-top: 8px; display: none; }
+    .settings-fallback { font-size: 11px; color: #888; margin-top: 6px; display: none; text-align: center; }
+    .local-only-note { background: #FAEEDA; border: 1px solid #FAC775; border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #854F0B; margin-bottom: 8px; line-height: 1.5; }
+    .cred-status { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 6px; padding: 5px 8px; border-radius: 5px; }
+    .cred-status.ok { background: #E1F5EE; color: #0F6E56; }
+    .cred-status.fail { background: #FCEBEB; color: #A32D2D; }
+    .cred-status.checking { background: #f5f5f5; color: #888; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">IB Exam Logger</div>
+    <div class="header-sub">Log questions to your database</div>
+  </div>
+  <div class="header-right">
+    <button class="hdr-btn active-tab" id="btn-log-view">Log</button>
+    <button class="hdr-btn" id="btn-questions-view">Page</button>
+    <button class="hdr-btn" id="btn-favourites-view">♥ Favs</button>
+    <button class="hdr-btn" id="btn-db-view">DB</button>
+    <button class="hdr-btn" id="btn-settings-view">⚙</button>
+  </div>
+</div>
+
+<div class="body">
+
+  <!-- ── Log panel (UNCHANGED) ── -->
+  <div class="panel active" id="panel-log">
+    <div id="no-page-msg" class="no-page" style="display:none;"></div>
+    <div id="page-content" style="display:none;">
+      <div class="q-card">
+        <div class="q-card-header">
+          <span class="q-name" id="q-name">—</span>
+          <span class="subject-badge" id="subject-badge">—</span>
+        </div>
+        <div class="q-card-body">
+          <div class="info-row">
+            <span class="info-label">Images</span>
+            <span class="info-val">
+              <span class="img-count-badge q" id="q-img-count">0 Q</span>
+              <span class="img-count-badge a" id="a-img-count">0 A</span>
+            </span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Old topics</span>
+            <span class="info-val" id="old-topics-val">—</span>
+          </div>
+          <div class="info-row" id="already-logged-row" style="display:none;">
+            <span class="info-label">Status</span>
+            <span class="info-val" style="color:#0F6E56;">✓ Already in database</span>
+          </div>
+        </div>
+      </div>
+      <button class="log-btn" id="log-btn"><span id="log-btn-text">Log this question</span></button>
+      <button class="log-all-btn" id="log-all-btn">Log all questions in sidebar list</button>
+      <div class="inline-msg" id="inline-msg"></div>
+    </div>
+  </div>
+
+  <!-- ── Questions panel (UNCHANGED) ── -->
+  <div class="panel" id="panel-questions">
+    <div class="qp-toolbar">
+      <span class="qp-count" id="qp-count">—</span>
+      <button class="qp-refresh-btn" id="qp-refresh-btn">↻ Refresh</button>
+    </div>
+    <div class="qp-legend">
+      <span class="qp-legend-item"><span class="qp-dot" style="background:#FFF176;border:1px solid #F9A825;"></span>Active + done</span>
+      <span class="qp-legend-item"><span class="qp-dot" style="background:#E8F5E9;border:1px solid #4CAF50;"></span>Done</span>
+      <span class="qp-legend-item"><span class="qp-dot" style="background:#E3F2FD;border:1px solid #90CAF9;"></span>Active</span>
+      <span class="qp-legend-item"><span class="qp-dot" style="background:#fff;border:1px solid #ddd;"></span>Not done</span>
+    </div>
+    <div class="qp-list" id="qp-list">
+      <div class="qp-loading">Click ↻ Refresh to load questions from this page.</div>
+    </div>
+    <div class="inline-msg" id="qp-msg" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- ── Favourites panel (NEW) ── -->
+  <div class="panel" id="panel-favourites">
+    <div class="fav-toolbar">
+      <input class="fav-filter" type="text" id="fav-filter" placeholder="Filter favourites..." />
+    </div>
+    <div id="fav-count" style="font-size:11px;color:#888;margin-bottom:10px;"></div>
+    <div class="fav-list" id="fav-list">
+      <div class="empty-fav"><div class="fav-icon">♥</div>No favourites yet.<br>Click the ♥ button next to any question<br>in the ExamMate sidebar to add it here.</div>
+    </div>
+    <div class="inline-msg" id="fav-msg" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- ── Database panel (UNCHANGED) ── -->
+  <div class="panel" id="panel-db">
+    <div class="db-stats">
+      <div class="stat-card"><div class="stat-val" id="stat-total">0</div><div class="stat-label">Total logged</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-tagged">0</div><div class="stat-label">Tagged</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-subjects">0</div><div class="stat-label">Subjects</div></div>
+    </div>
+    <div class="db-toolbar">
+      <input class="db-filter" type="text" id="db-filter" placeholder="Filter by name or subject..." />
+      <button class="db-action-btn" id="sync-btn">↻ Sync</button>
+      <div class="more-menu">
+        <button class="more-btn" id="more-btn">⋮</button>
+        <div class="more-dropdown" id="more-dropdown">
+          <button class="more-item" id="export-btn">Export JSON</button>
+          <button class="more-item danger" id="clear-btn">Clear all</button>
+        </div>
+      </div>
+    </div>
+    <div class="entry-list" id="entry-list">
+      <div class="empty-db">No questions logged yet.<br>Go to an ExamMate page and log questions.</div>
+    </div>
+  </div>
+
+  <!-- ── Settings panel ── -->
+  <div class="panel" id="panel-settings">
+    <div class="settings-section">
+      <div class="settings-title">Storage mode</div>
+      <div class="mode-toggle">
+        <button class="mode-btn" id="mode-local">📁 Local only</button>
+        <button class="mode-btn" id="mode-firebase">☁ Firebase</button>
+      </div>
+      <div class="local-only-note" id="local-only-note" style="display:none;">
+        Data saved in Chrome only. Friends can install the extension and get their own separate local database.
+      </div>
+      <div class="cred-status" id="cred-status" style="display:none;"></div>
+    </div>
+
+    <div class="settings-section" id="firebase-section" style="display:none;">
+      <div class="settings-title">Firebase credentials</div>
+      <div class="settings-row">
+        <div class="settings-label">Project ID</div>
+        <input class="settings-input" type="text" id="s-project-id" placeholder="e.g. exam-tracker-490821" />
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">API Key</div>
+        <input class="settings-input" type="password" id="s-api-key" placeholder="AIza..." />
+        <div class="settings-hint"><a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> → Project Settings → Web app</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-title">AI tagging <span style="font-size:10px;color:#aaa;font-weight:400;text-transform:none;">(coming soon)</span></div>
+      <div class="settings-row">
+        <div class="settings-label">OpenRouter API Key <span class="badge-disabled">disabled</span></div>
+        <input class="settings-input" type="password" id="s-openrouter-key" placeholder="sk-or-..." disabled />
+        <div class="settings-hint">Will enable automatic new-syllabus chapter tagging</div>
+      </div>
+    </div>
+
+    <button class="save-settings-btn" id="save-settings-btn">Save &amp; verify</button>
+    <div class="settings-saved" id="settings-saved">✓ Settings saved</div>
+    <div class="settings-error" id="settings-error"></div>
+    <div class="settings-fallback" id="settings-fallback">Extension is using local-only mode as credentials failed.</div>
+  </div>
+
+</div>
+
+<script src="firestore.js"></script>
+<script src="storage.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
