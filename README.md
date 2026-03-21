@@ -9,8 +9,8 @@ Exammate Helper helps declutter the ExamMate UI into a clean UI and gives you th
 
 - **Cleans Up the UI**: Removes headers, footers, logo boxes, and sidebars so you can focus on the content.
 - **Question Completion Tracking**: A built-in "Done" checkbox for every question in the sidebar. Marked questions update your local or cloud database instantly.
-- **Custom Favourites**: Vipul sir's account has a lot of favourited questions and it has reached the max limit. I decided to implement a feautres where you can add your own favourites that are not affected by others favourite.
-- **Firebase Cloud Sync**: If you choose to connect to a firebase DB then your progress will sync from anywhere!
+- **Custom Favourites (shared accounts)**: My teacher shares his exam-mate credentials to us. A lot of students use and have used this account so this account has a lot of favourited questions such that the max limit was reached. To fix this issue, I decided to implement a feature where you can add your own favourites that are not affected by others people favourites.
+- **Firebase Cloud Sync**: If you choose to connect to a firebase DB then your progress will be able to sync from anywhere!
 - **Database Panel**: View, filter, and export your entire logged history as a JSON file.
 
 ---
@@ -20,7 +20,7 @@ Exammate Helper helps declutter the ExamMate UI into a clean UI and gives you th
 Since this extension isn't on the public store (and won't cause it costs me 5 USD), here is how to install it for free using **Developer Mode**:
 
 1. **Download & Extract**: 
-   - Download the source code (or the ZIP provided by your friend).
+   - Download the source code (zip file).
    - Extract it into a folder on your computer.
 2. **Open Extensions Menu**: 
    - In Chrome, type `chrome://extensions/` in the URL bar and hit enter.
