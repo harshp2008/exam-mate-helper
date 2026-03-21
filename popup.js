@@ -501,7 +501,7 @@ function renderTodayPanel() {
       return '<div class="today-item' + (isDone ? ' is-done' : '') + '">' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="today-name" title="' + (e.question_name || '') + '">' + 
-            (e.question_name || '—') + '</div>' +
+            (e.source_url ? '<a href="' + e.source_url + '" target="_blank" style="color:inherit;text-decoration:none;">' + (e.question_name || '—') + '</a>' : (e.question_name || '—')) + '</div>' +
           '<div class="today-meta">' + subjectNames + 
             (topics ? ' · ' + topics.split(',').slice(0,2).map(function(t) { return t.trim(); }).join(', ') : '') + '</div>' +
         '</div>' +
