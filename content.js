@@ -105,7 +105,7 @@ function injectAllCSS() {
     '#questions-list1.ib-select-mode .ib-todo-checkbox { display: inline-block !important; margin-left: 6px; vertical-align: middle; }',
     '.ib-todo-checkbox { display: none; width: 16px; height: 16px; cursor: pointer; }',
     'body.ib-focus-mode #questions-list1 li[id^="qid-"]:not(.ib-todo) { display: none !important; }',
-    'body.ib-focus-mode .randomdropdown { pointer-events: none !important; opacity: 0.4 !important; }',
+    'body.ib-focus-mode .randomdropdown, body.ib-focus-mode #ib-todo-nav-item { pointer-events: none !important; opacity: 0.4 !important; }',
     '#ib-todo-toast { position: fixed; bottom: 20px; left: 20px; background: #1a1a1a; color: white; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; z-index: 99998; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: ib-slidein 0.2s ease; }',
     '#ib-todo-toast button { background: none; border: 1px solid rgba(255,255,255,0.3); color: white; padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; }',
     '#ib-todo-toast button:hover { background: rgba(255,255,255,0.1); }',
@@ -265,12 +265,14 @@ function injectDoneCheckboxes() {
     var todoNavItem = document.createElement('li');
     todoNavItem.className = 'nav-item';
     todoNavItem.id = 'ib-todo-nav-item';
+    todoNavItem.title = 'Manage your daily To-Do questions';
     todoNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-list d-block text-center"></i><span style="font-size:0.6rem; font-weight:700"> To-Do </span></a>';
     todoNavItem.onclick = toggleSelectMode;
 
     var filterTodoNavItem = document.createElement('li');
     filterTodoNavItem.className = 'nav-item';
     filterTodoNavItem.id = 'ib-todo-filter-nav-item';
+    filterTodoNavItem.title = 'Toggle Focus Mode: Hide all non-queued questions to quickly filter the page';
     filterTodoNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-eye d-block text-center"></i><span style="font-size:0.6rem; font-weight:700"> Focus </span></a>';
     
     filterTodoNavItem.onclick = function() {
@@ -303,6 +305,15 @@ function injectDoneCheckboxes() {
         }
       }
     }
+
+    var infoNavItem = document.createElement('li');
+    infoNavItem.className = 'nav-item ib-select-mode-only';
+    infoNavItem.id = 'ib-todo-info-nav-item';
+    infoNavItem.style.display = 'none';
+    infoNavItem.title = 'Queue Load: Details your queued selections on this page vs your total global queue volume';
+    infoNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border pe-none" style="padding-left:0; padding-right:0; margin-right:8px;">' +
+                            '<div id="ib-info-page-count" style="font-size:13px; font-weight:800; color:#185FA5; text-align:center; height:18px; line-height:18px; margin-bottom:1px;">0/0</div>' +
+                            '<span style="font-size:0.6rem; font-weight:700">Total: <span id="ib-info-total-count">0</span></span></a>';
 
     var allNavItem = document.createElement('li');
     allNavItem.className = 'nav-item ib-select-mode-only';
@@ -354,8 +365,6 @@ function injectDoneCheckboxes() {
           }
         });
         
-        document.getElementById('ib-all-text').textContent = targetState ? ' None ' : ' All ';
-        
         if (add.length > 0 || remove.length > 0 || addWithData.length > 0) {
           chrome.runtime.sendMessage({
             action: 'updateTodoQueue',
@@ -364,6 +373,8 @@ function injectDoneCheckboxes() {
             addWithData: addWithData
           });
         }
+        
+        if (typeof updateTodoSelectionUI === 'function') updateTodoSelectionUI();
       });
     };
 
@@ -374,6 +385,7 @@ function injectDoneCheckboxes() {
     saveNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link nav-no-border"><i class="fi fi-br-disk d-block text-center"></i><span style="font-size:0.6rem; font-weight:700"> Save </span></a>';
     saveNavItem.onclick = toggleSelectMode;
 
+    toolbarRow.insertBefore(infoNavItem, toolbarRow.firstChild);
     toolbarRow.appendChild(filterTodoNavItem);
     toolbarRow.appendChild(todoNavItem);
     toolbarRow.appendChild(allNavItem);
@@ -395,7 +407,7 @@ function toggleSelectMode() {
     
     if (toolbarRow) {
       Array.from(toolbarRow.children).forEach(function(li) {
-        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item') {
+        if (li.id === 'ib-all-nav-item' || li.id === 'ib-save-nav-item' || li.id === 'ib-todo-info-nav-item') {
           li.style.display = 'block';
         } else {
           li.style.display = 'none';
@@ -420,6 +432,8 @@ function toggleSelectMode() {
         var name = cb.getAttribute('data-qname');
         cb.checked = ibCurrentTodoSet.has(name);
       });
+      
+      if (typeof updateTodoSelectionUI === 'function') updateTodoSelectionUI();
     });
     
   } else {
@@ -515,15 +529,16 @@ function injectCheckboxIntoLi(li) {
   } else {
     question_name = nameSpan.textContent.trim();
     // Wrap the name with our new generic DOM element block
-    var rectDiv = document.createElement('div');
-    rectDiv.className = 'ib-status-rect';
+    var statusRect = document.createElement('div');
+    statusRect.className = 'ib-status-rect';
+    statusRect.title = 'To-Do Indicator: Identifies whether this question is queued, completed, or active';
     var textSpan = document.createElement('span');
     textSpan.className = 'ib-qname-text';
     textSpan.textContent = question_name;
     
     nameSpan.textContent = '';
     nameSpan.classList.add('ib-qname-wrapper');
-    nameSpan.appendChild(rectDiv);
+    nameSpan.appendChild(statusRect); // Changed from rectDiv to statusRect
     nameSpan.appendChild(textSpan);
   }
   
@@ -565,6 +580,8 @@ function injectCheckboxIntoLi(li) {
     var isChecked = this.checked;
     if (isChecked) ibCurrentTodoSet.add(question_name);
     else ibCurrentTodoSet.delete(question_name);
+    
+    if (typeof updateTodoSelectionUI === 'function') updateTodoSelectionUI();
     
     // Instantly sync the individual click
     chrome.storage.local.get(['ib_question_cache'], function(res) {
@@ -673,6 +690,36 @@ function toggleFavouriteFromButton(btn, li, question_name) {
     btn.classList.add('is-fav');
     btn.innerHTML = '&#9829;'; // Solid heart ♥
     btn.title = 'Remove from favourites';
+  }
+}
+
+function updateTodoSelectionUI() {
+  if (!ibSelectModeActive) return;
+  var list = document.getElementById('questions-list1');
+  if (!list) return;
+  var checkboxes = Array.from(list.querySelectorAll('.ib-todo-checkbox'));
+  
+  if (checkboxes.length > 0) {
+    var anyUnchecked = checkboxes.some(function(cb) { return !cb.checked; });
+    var textEl = document.getElementById('ib-all-text');
+    var iconEl = document.getElementById('ib-all-nav-item') ? document.getElementById('ib-all-nav-item').querySelector('i') : null;
+    if (anyUnchecked) {
+      if (textEl) textEl.textContent = ' All ';
+      if (iconEl) iconEl.className = 'fi fi-br-check-double d-block text-center';
+    } else {
+      if (textEl) textEl.textContent = ' None ';
+      if (iconEl) iconEl.className = 'fi fi-br-cross d-block text-center';
+    }
+  }
+  
+  var pageCountEl = document.getElementById('ib-info-page-count');
+  var totalCountEl = document.getElementById('ib-info-total-count');
+  if (pageCountEl) {
+    var pageSelected = checkboxes.filter(function(cb) { return cb.checked; }).length;
+    pageCountEl.textContent = pageSelected + '/' + checkboxes.length;
+  }
+  if (totalCountEl) {
+    totalCountEl.textContent = ibCurrentTodoSet ? ibCurrentTodoSet.size : 0;
   }
 }
 
