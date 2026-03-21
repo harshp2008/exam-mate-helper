@@ -1,54 +1,34 @@
 # Exammate Helper
-
-**An Chrome extension for IB students to streamline their Exam-mate practice.**  
-Exammate Helper helps declutter the ExamMate UI into a clean UI and gives you the tools to track every question you've ever attempted.
+A Chrome extension for IB students to streamline their ExamMate practice.  
+Declutters the ExamMate UI and gives you the tools to track every question you've ever attempted.
 
 ---
 
 ## Features
-
 - **Cleans Up the UI**: Removes headers, footers, logo boxes, and sidebars so you can focus on the content.
 - **Question Completion Tracking**: A built-in "Done" checkbox for every question in the sidebar. Marked questions update your local or cloud database instantly.
-- **Custom Favourites (shared accounts)**: My teacher shares his exam-mate credentials to us. A lot of students use and have used this account so this account has a lot of favourited questions such that the max limit was reached. To fix this issue, I decided to implement a feature where you can add your own favourites that are not affected by others people favourites.
-- **Firebase Cloud Sync**: If you choose to connect to a firebase DB then your progress will be able to sync from anywhere!
+- **Custom Favourites**: ExamMate's shared account model means favourites are shared across all users. Once the limit is hit, nobody can add more. This feature gives every user their own personal favourites list that is completely independent of the shared account.
+- **Firebase Cloud Sync**: Optionally connect your own Firebase project to sync your progress across devices.
 - **Database Panel**: View, filter, and export your entire logged history as a JSON file.
 
 ---
 
-## Installation (The Free Way)
+## Installation
+This extension is not on the Chrome Web Store. Install it manually using Developer Mode:
 
-Since this extension isn't on the public store (and won't cause it costs me 5 USD), here is how to install it for free using **Developer Mode**:
-
-1. **Download & Extract**: 
-   - Download the source code (zip file).
-   - Extract it into a folder on your computer.
-2. **Open Extensions Menu**: 
-   - In Chrome, type `chrome://extensions/` in the URL bar and hit enter.
-3. **Enable Developer Mode**: 
-   - In the top-right corner, toggle the **Developer mode** switch to **ON**.
-4. **Load the Extension**: 
-   - Click the **"Load unpacked"** button in the top-left.
-   - Select the folder where you extracted the code.
-5. **Pin it**: 
-   - Click the puzzle icon next to your profile picture in Chrome and pin **Exammate Helper** for easy access.
+1. Download the ZIP file and extract it into a folder on your computer.
+2. Open Chrome and go to `chrome://extensions/`
+3. Toggle **Developer Mode** on (top-right corner).
+4. Click **Load unpacked** and select the extracted folder.
+5. Click the puzzle icon next to your profile picture and pin **Exammate Helper**.
 
 ---
 
-## Connecting Your Own Firebase Database
+## Firebase Setup (Optional)
+By default the extension stores data locally on your device. If you want cloud sync:
 
-If you want to sync your progress to the cloud instead of keeping it just on your laptop:
+1. Go to [console.firebase.google.com](https://console.firebase.google.com/) and create a new project.
+2. In Project Settings → Your apps → add a Web App → copy your **Project ID** and **API Key**.
+3. Open the extension → Settings ⚙ → switch Storage Mode to **Firebase** → paste your keys → click **Save & Verify**.
 
-1. **Create a Project**: 
-   - Visit the [Firebase Console](https://console.firebase.google.com/).
-   - Click "Add project" and name it something like `ExammateTracker`.
-2. **Get Your Keys**: 
-   - In your Project Settings, scroll down to "Your apps" and add a **Web App**.
-   - Note down your **Project ID** and **API Key**.
-3. **Configure the Extension**: 
-   - Open the Exammate Helper extension popup.
-   - Click the Settings icon (⚙️).
-   - Change the Storage Mode to **Firebase**.
-   - Paste your **Project ID** and **API Key**.
-   - Click **"Save & Verify"**.
-4. **That's it!** All your "Done" questions and favourites will now live in the cloud.
-
+All your done questions and favourites will sync across devices from that point.
