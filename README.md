@@ -5,6 +5,16 @@ Declutters the ExamMate UI and gives you the tools to track every question you'v
 
 ---
 
+## 🔥 Recent Updates
+
+- **MCQ Text Answer Retrieval**: Automatically detects and displays text-based answers (e.g., "B") whenever a question is missing image-based answers.  
+- **Improved 0-Answer Handling**: For questions where no answer (image or text) is found, the extension shows a bright red **0A** indicator and triggers a toast notification with a GitHub issue link to report the missing data.
+- **Focus Mode Enhancement**: Automatically selects the first un-attempted to-do item in your list when entering Focus Mode.
+- **Improved UI Persistence**: Custom buttons (Done, Favourite, Checkbox) and status indicators now stay correctly synced and visible even after using the **Search** or **Random** features.
+- **Reliability & UI Improvements**: Significant bug fixes and overall app reliability improvements, including UI consistency and visual polish.
+
+---
+
 ## 🚀 Key Features
 
 ### 🌟 Smart UI Clean-up
@@ -16,6 +26,7 @@ Removes headers, footers, logo boxes, and sidebars instantly. The interface is o
 - **Direct Sidebar Integration**: Every question in the ExamMate sidebar gets a dedicated **Done** (✓) button.
 - **Visual Feedback**: Completed questions are highlighted in green, while the currently active question is marked in yellow.
 - **Strikethrough Logic**: Questions in your To-Do list automatically get a strikethrough once marked as done.
+- **Smart Analytics**: Real-time Q/A counts (e.g., **1 Q**, **1 A**) displayed directly in the extension popup.
 
 ### 📁 Personal Favourites
 
@@ -24,6 +35,7 @@ ExamMate's default favourites are shared across all users on an account, which o
 - Add any question to your private list.
 - Filter and manage your favourites in the extension popup.
 - Completely independent of the shared ExamMate account limits.
+- Supports MCQ text-based answer persistence.
 
 ### 📅 Daily To-Do Queue & Selection Mode
 
@@ -34,11 +46,12 @@ Plan your study sessions with precision:
 - **Queue Stats**: Real-time counters show how many questions you've selected on the current page versus your total daily goal.
 - **Today Dashboard**: Accessible via the extension popup, featuring a progress bar and easy queue management.
 
-### 🎯 Focus Mode
+### 🎯 Focus Mode (Now with Auto-Select)
 
 The ultimate distraction-free study environment:
 
 - **Total Filtering**: Toggle **Focus Mode** (👁️ icon) to hide every question except the ones in your daily queue.
+- **Auto-Select**: When you enter Focus Mode, the extension automatically clicks on the first pending (undone) to-do item.
 - **Navigation Lock**: Disables randomizers and non-essential navigation to keep you focused on your selected tasks.
 - **Smart Redirection**: If a page has no to-dos, Focus Mode provides a "Scan" results page suggesting where your remaining queued questions are located (by subject and page).
 
