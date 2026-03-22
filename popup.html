@@ -32,6 +32,9 @@
     .img-count-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
     .img-count-badge.q { background: #E1F5EE; color: #0F6E56; }
     .img-count-badge.a { background: #FAEEDA; color: #854F0B; }
+    .img-count-badge.zero { background: #FCEBEB; color: #D32F2F; font-weight: 700; }
+    #zero-answer-toast { display: none; position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: #D32F2F; color: #fff; font-size: 11px; font-weight: 600; padding: 8px 14px; border-radius: 8px; box-shadow: 0 3px 10px rgba(0,0,0,0.25); z-index: 9999; max-width: 370px; text-align: center; line-height: 1.5; }
+    #zero-answer-toast a { color: #FFECB3; }
     .log-btn { width: 100%; padding: 11px; background: #185FA5; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s, transform 0.08s; user-select: none; margin-bottom: 8px; }
     .log-btn:hover:not(:disabled) { background: #0C447C; }
     .log-btn:active:not(:disabled) { transform: scale(0.97); }
@@ -208,6 +211,8 @@
       <div class="inline-msg" id="inline-msg"></div>
     </div>
   </div>
+
+  <div id="zero-answer-toast"></div>
 
 
 

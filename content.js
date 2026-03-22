@@ -434,6 +434,13 @@ function injectCheckboxIntoLi(li) {
   targetSpan.appendChild(checkbox);
 }
 
+function getMcqAnswer(parsed) {
+  var answerImgs = parsed ? (parsed.answer_images || []) : [];
+  if (answerImgs.length > 0) return null;
+  var el = document.getElementById('answer-text-1');
+  return el ? el.textContent.trim() : null;
+}
+
 function toggleDoneFromButton(btn, li, question_name) {
   var isDone = li.classList.contains('done');
   // Send message to background to toggle
@@ -450,6 +457,7 @@ function toggleDoneFromButton(btn, li, question_name) {
         subject: inferSubject(question_name),
         question_imgs: parsed ? (parsed.question_images || []) : [],
         answer_imgs: parsed ? (parsed.answer_images || []) : [],
+        mcq_answer: getMcqAnswer(parsed),
         old_topics: parsed ? (parsed.topics || '') : '',
         logged_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
         source_url: window.location.href,
@@ -483,6 +491,7 @@ function toggleFavouriteFromButton(btn, li, question_name) {
         subject: inferSubject(question_name),
         question_imgs: parsed ? (parsed.question_images || []) : [],
         answer_imgs: parsed ? (parsed.answer_images || []) : [],
+        mcq_answer: getMcqAnswer(parsed),
         old_topics: parsed ? (parsed.topics || '') : '',
         logged_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
         source_url: window.location.href,
@@ -716,10 +725,20 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (!parsed) { sendResponse({ error: 'Could not parse onclick data.' }); return true; }
     var liId = activeLi.id || '';
     var qidMatch = liId.match(/qid-(\d+)/);
+    var answerImgs = parsed.answer_images || [];
+    var mcqAnswer = null;
+    if (answerImgs.length === 0) {
+      var mcqEl = document.getElementById('answer-text-1');
+      if (mcqEl) mcqAnswer = mcqEl.textContent.trim();
+    }
+    if (answerImgs.length === 0 && !mcqAnswer) {
+      console.warn('[EXAM-MATE HELPER] IBDP board, question ' + question_name + ', 0 Answers are found. File a Github Issue for the github repo: https://github.com/harshp2008/exam-mate-helper');
+    }
     sendResponse({
       question_name: question_name, qid: qidMatch ? qidMatch[1] : null,
       subject: inferSubject(question_name || ''),
-      question_imgs: parsed.question_images || [], answer_imgs: parsed.answer_images || [],
+      question_imgs: parsed.question_images || [], answer_imgs: answerImgs,
+      mcq_answer: mcqAnswer,
       old_topics: parsed.topics || '',
       logged_at: new Date().toISOString().replace('T', ' ').substring(0, 19), source_url: window.location.href, page_num: (typeof getCurrentPageNumber === 'function' ? getCurrentPageNumber() : 1)
     });
@@ -742,6 +761,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         question_name: question_name, qid: qidMatch ? qidMatch[1] : null,
         subject: inferSubject(question_name || ''),
         question_imgs: parsed.question_images || [], answer_imgs: parsed.answer_images || [],
+        mcq_answer: li.classList.contains('active') ? getMcqAnswer(parsed) : undefined,
         old_topics: parsed.topics || '',
         logged_at: new Date().toISOString().replace('T', ' ').substring(0, 19), source_url: window.location.href, page_num: (typeof getCurrentPageNumber === 'function' ? getCurrentPageNumber() : 1),
         is_active: li.classList.contains('active'),
@@ -782,10 +802,20 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     var nameSpan = activeLi.querySelector('span');
     var question_name = nameSpan ? nameSpan.textContent.trim() : null;
     var parsed = parseOnclickData(activeLi);
+    var answerImgsGA = parsed ? (parsed.answer_images || []) : [];
+    var mcqAnswerGA = null;
+    if (answerImgsGA.length === 0) {
+      var mcqElGA = document.getElementById('answer-text-1');
+      if (mcqElGA) mcqAnswerGA = mcqElGA.textContent.trim();
+    }
+    if (answerImgsGA.length === 0 && !mcqAnswerGA) {
+      console.warn('[EXAM-MATE HELPER] IBDP board, question ' + question_name + ', 0 Answers are found. File a Github Issue for the github repo: https://github.com/harshp2008/exam-mate-helper');
+    }
     sendResponse({
       question_name: question_name, subject: inferSubject(question_name || ''),
       question_imgs: parsed ? (parsed.question_images || []) : [],
-      answer_imgs: parsed ? (parsed.answer_images || []) : [],
+      answer_imgs: answerImgsGA,
+      mcq_answer: mcqAnswerGA,
       old_topics: parsed ? (parsed.topics || '') : '',
     });
     return true;

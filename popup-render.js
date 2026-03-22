@@ -47,7 +47,21 @@ function renderCurrentQuestion(data) {
   document.getElementById('q-name').textContent = data.question_name || 'Unknown';
   document.getElementById('subject-badge').textContent = data.subject || 'unknown';
   document.getElementById('q-img-count').textContent = data.question_imgs.length + ' Q';
-  document.getElementById('a-img-count').textContent = data.answer_imgs.length + ' A';
+
+  var aEl = document.getElementById('a-img-count');
+  var hasImgAnswers = data.answer_imgs && data.answer_imgs.length > 0;
+  var mcq = data.mcq_answer || null;
+  if (hasImgAnswers) {
+    aEl.textContent = data.answer_imgs.length + ' A';
+    aEl.className = 'img-count-badge a';
+  } else if (mcq) {
+    aEl.textContent = '1 A (MCQ)';
+    aEl.className = 'img-count-badge a';
+  } else {
+    aEl.textContent = '0 A';
+    aEl.className = 'img-count-badge zero';
+    showZeroAnswerToast(data.question_name);
+  }
   
   var topicsEl = document.getElementById('old-topics-val');
   if (data.old_topics) {
@@ -271,11 +285,23 @@ function renderFavouritesPanel() {
     var doneBadge = isDone ? '<span class="fav-done-badge">✓ done</span>' : '';
     var qCount = (e.question_imgs || []).length;
     var aCount = (e.answer_imgs || []).length;
+    var aLabel, aStyle;
+    if (aCount > 0) {
+      aLabel = aCount + 'A';
+    } else if (e.mcq_answer) {
+      aLabel = '1A';
+    } else if (e.mcq_answer === null) {
+      // Explicitly checked and found nothing — show red warning
+      aLabel = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
+    } else {
+      // Legacy entry (mcq_answer undefined) — neutral display, no false alarm
+      aLabel = '0A';
+    }
     return '<div class="fav-item">' +
       '<div class="fav-heart">♥</div>' +
       '<div style="flex:1;min-width:0;">' +
       '<div class="fav-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:#185FA5;">' + (e.question_name || '—') + doneBadge + '</div>' +
-      '<div class="fav-meta">' + (e.subject || '') + ' · ' + qCount + 'Q ' + aCount + 'A · ' + (e.logged_at || '') + '</div>' +
+      '<div class="fav-meta">' + (e.subject || '') + ' · ' + qCount + 'Q ' + aLabel + ' · ' + (e.logged_at || '') + '</div>' +
 
       '</div>' +
       '<div class="fav-actions">' +
@@ -366,10 +392,23 @@ function renderEntryList() {
       var isTodo = e.todo_date === today;
       var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
       var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
+      var aCount = (e.answer_imgs || []).length;
+      var aStr;
+      if (aCount > 0) {
+        aStr = aCount + 'A';
+      } else if (e.mcq_answer) {
+        aStr = '1A';
+      } else if (e.mcq_answer === null) {
+        // Explicitly checked and found nothing — show red warning
+        aStr = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
+      } else {
+        // Legacy entry (mcq_answer undefined) — neutral display
+        aStr = '0A';
+      }
       html += '<div class="entry-item">' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + '</div>' +
-          '<div class="entry-meta">' + (e.question_imgs || []).length + 'Q ' + (e.answer_imgs || []).length + 'A · ' + timeStr + '</div>' +
+          '<div class="entry-meta">' + (e.question_imgs || []).length + 'Q ' + aStr + ' · ' + timeStr + '</div>' +
         '</div>' +
         '<button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button>' +
       '</div>';
@@ -415,3 +454,13 @@ document.addEventListener('click', function(e) {
 
 function showMsg(type, text) { var el = document.getElementById('inline-msg'); if (!el) return; el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block'; }
 function clearMsg() { var el = document.getElementById('inline-msg'); if (el) el.style.display = 'none'; }
+
+function showZeroAnswerToast(questionName) {
+  var toastEl = document.getElementById('zero-answer-toast');
+  if (!toastEl) return;
+  toastEl.innerHTML = '⚠ 0 Answers found for <strong>' + (questionName || 'this question') + '</strong>.<br>' +
+    'Please <a href="https://github.com/harshp2008/exam-mate-helper/issues" target="_blank">file a GitHub Issue</a>.';
+  toastEl.style.display = 'block';
+  clearTimeout(toastEl._timeout);
+  toastEl._timeout = setTimeout(function() { toastEl.style.display = 'none'; }, 6000);
+}
