@@ -90,6 +90,19 @@ function injectDoneCheckboxes() {
       chrome.storage.local.set({ ib_focus_mode: isActive });
       updateFocusButtonUI(isActive);
       checkEmptyFocusState();
+      // Bug fix 2: auto-select first undone to-do when entering focus mode
+      if (isActive) {
+        setTimeout(function() {
+          var list = document.getElementById('questions-list1');
+          if (!list) return;
+          // Find first visible (not done) to-do item
+          var firstUndone = list.querySelector('li.ib-todo:not(.done)');
+          if (firstUndone) {
+            firstUndone.click();
+            firstUndone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
     };
     
     // Initial fetch of focus mode state when creating button
@@ -797,6 +810,20 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'showToast') {
     showStatusToast(request.mode);
     sendResponse({ shown: true });
+    return true;
+  }
+
+  if (request.action === 'resetTodoCheckboxes') {
+    // Called when Today page clears the queue — reset all sidebar checkboxes + in-memory sets
+    ibCurrentTodoSet = new Set();
+    ibInitialTodoSet = new Set();
+    var list = document.getElementById('questions-list1');
+    if (list) {
+      list.querySelectorAll('.ib-todo-checkbox').forEach(function(cb) { cb.checked = false; });
+      list.querySelectorAll('li.ib-todo').forEach(function(li) { li.classList.remove('ib-todo'); });
+    }
+    if (typeof updateTodoSelectionUI === 'function') updateTodoSelectionUI();
+    sendResponse({ done: true });
     return true;
   }
 

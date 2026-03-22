@@ -189,6 +189,10 @@ function renderTodayPanel() {
       }
     }
     await markDoneOnPage();
+    // Also reset checkboxes in the sidebar's todo-edit mode if it's open
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'resetTodoCheckboxes' });
+    });
     renderTodayPanel();
   });
 }
