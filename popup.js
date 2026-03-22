@@ -77,12 +77,32 @@ document.addEventListener('DOMContentLoaded', async function () {
     showPageError('Open an ExamMate page first,\nthen click the extension.');
     return;
   }
-  try {
-    var response = await chrome.tabs.sendMessage(tab.id, { action: 'scrape' });
-    if (response && response.error) showPageError(response.error);
-    else if (response) { window.IB.currentData = response; renderCurrentQuestion(response); }
-    else showPageError('No data returned. Try refreshing ExamMate.');
-  } catch (e) { showPageError('Could not read the page.\nRefresh ExamMate and try again.'); }
+  // Scrape with retry — ExamMate (Livewire) sometimes hasn't embedded onclick
+  // data into the active sidebar <li> yet when the page first loads.
+  // content.js auto-clicks the li after 600ms to force Livewire to attach it;
+  // we retry here to give that a chance to complete before showing an error.
+  var MAX_RETRIES = 3;
+  var RETRY_DELAY_MS = 800;
+  for (var attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      var response = await chrome.tabs.sendMessage(tab.id, { action: 'scrape' });
+      if (response && response.error === 'Could not parse onclick data.' && attempt < MAX_RETRIES) {
+        // Livewire data not ready yet — wait and retry silently
+        await new Promise(function(r) { setTimeout(r, RETRY_DELAY_MS); });
+        continue;
+      }
+      if (response && response.error) { showPageError(response.error); break; }
+      if (response) { window.IB.currentData = response; renderCurrentQuestion(response); break; }
+      showPageError('No data returned. Try refreshing ExamMate.');
+      break;
+    } catch (e) {
+      if (attempt < MAX_RETRIES) {
+        await new Promise(function(r) { setTimeout(r, RETRY_DELAY_MS); });
+      } else {
+        showPageError('Could not read the page.\nRefresh ExamMate and try again.');
+      }
+    }
+  }
 });
 
 chrome.runtime.onMessage.addListener(function(request) {
