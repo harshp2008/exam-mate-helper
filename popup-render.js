@@ -17,6 +17,7 @@ function switchView(view) {
   if (view === 'db') renderDBPanel();
   if (view === 'favourites') renderFavouritesPanel();
   if (view === 'settings') populateSettingsUI();
+  if (view === 'log' && window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
 
   window.IB.previousView = view;
 }
@@ -57,7 +58,7 @@ function renderCurrentQuestion(data) {
   document.getElementById('already-logged-row').style.display = logged ? 'flex' : 'none';
   var logBtn = document.getElementById('log-btn');
   logBtn.disabled = false; logBtn.classList.remove('success');
-  document.getElementById('log-btn-text').textContent = logged ? 'Log again (update)' : 'Log this question';
+  document.getElementById('log-btn-text').textContent = logged ? 'Mark as done again (Update record)' : 'Mark as done';
 }
 
 // ── Questions panel ───────────────────────────────────────────────────────────
@@ -121,9 +122,9 @@ function renderTodayPanel() {
   var todayItems = window.IB.allEntries.filter(function(e) { 
     return e.todo_date === today; 
   });
-  var doneCount = todayItems.filter(function(e) {
-    return !!e.logged_at; 
-  }).length;
+  var doneItems   = todayItems.filter(function(e) { return !!e.logged_at; });
+  var undoneItems = todayItems.filter(function(e) { return !e.logged_at; });
+  var doneCount = doneItems.length;
 
   var panel = document.getElementById('panel-today');
   if (!panel) return;
@@ -139,10 +140,17 @@ function renderTodayPanel() {
   panel.innerHTML =
     '<div class="today-progress">' +
       '<span>' + doneCount + ' / ' + todayItems.length + ' done</span>' +
-      '<div class="today-progress-bar">' +
-        '<div class="today-progress-fill" style="width:' + pct + '%"></div>' +
+      '<div class="today-progress-bar"><div class="today-progress-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="today-btn-group">' +
+        '<button class="today-clear-btn" id="today-clear-completed-btn" title="Remove completed questions from your queue (keeps unfinished ones)">Clear done</button>' +
+        '<div class="today-more-wrap">' +
+          '<button class="today-more-btn" id="today-more-btn" title="More options">⋮</button>' +
+          '<div class="today-more-dropdown" id="today-more-dropdown">' +
+            '<div class="today-more-info">⚠ <b>Clear All</b> removes the to-do status from finished questions AND <b>permanently deletes</b> unfinished to-do questions from the database.</div>' +
+            '<button class="today-more-item danger" id="today-clear-all-btn">Clear all</button>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<button class="today-clear-btn" id="today-clear-btn">Clear queue</button>' +
     '</div>' +
     '<div id="today-list">' +
     todayItems.map(function(e) {
@@ -162,6 +170,7 @@ function renderTodayPanel() {
     }).join('') +
     '</div>';
 
+  // Remove individual item
   panel.querySelectorAll('.today-remove-btn').forEach(function(btn) {
     btn.addEventListener('click', async function() {
       var name = this.getAttribute('data-name');
@@ -177,27 +186,64 @@ function renderTodayPanel() {
     });
   });
 
-  document.getElementById('today-clear-btn').addEventListener('click', async function() {
-    if (!confirm('Clear all ' + todayItems.length + ' questions from today\'s queue?')) return;
-    var btn = this;
-    btn.textContent = '...'; btn.disabled = true;
-    todayItems.forEach(function(e) { e.todo_date = null; });
+  // Toggle more-options dropdown
+  document.getElementById('today-more-btn').addEventListener('click', function(ev) {
+    ev.stopPropagation();
+    document.getElementById('today-more-dropdown').classList.toggle('open');
+  });
+  document.addEventListener('click', function todayClose() {
+    var d = document.getElementById('today-more-dropdown');
+    if (d) d.classList.remove('open');
+    document.removeEventListener('click', todayClose);
+  });
+
+  // Clear Completed: only remove to-do status for done items
+  document.getElementById('today-clear-completed-btn').addEventListener('click', async function() {
+    if (doneItems.length === 0) { return; }
+    if (!confirm('Remove ' + doneItems.length + ' completed question(s) from your queue?')) return;
+    var btn = this; btn.textContent = '...'; btn.disabled = true;
+    doneItems.forEach(function(e) { e.todo_date = null; });
     await window.IB.saveCache(window.IB.allEntries);
     if (useFirebase()) {
-      for (var i = 0; i < todayItems.length; i++) {
-        try { await window.IB.fsWrite(todayItems[i]); } catch(_) {}
+      for (var i = 0; i < doneItems.length; i++) {
+        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
       }
     }
     await markDoneOnPage();
-    // Also reset checkboxes in the sidebar's todo-edit mode if it's open
-    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-      if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'resetTodoCheckboxes' });
-    });
+    notifyContentScriptTodoReset();
+    renderTodayPanel();
+  });
+
+  // Clear All: remove done todo status AND delete undone entries from DB
+  document.getElementById('today-clear-all-btn').addEventListener('click', async function() {
+    var msg = 'This will:\n\u2022 Remove ' + doneItems.length + ' completed question(s) from your queue\n\u2022 PERMANENTLY DELETE ' + undoneItems.length + ' unfinished question(s) from the database\n\nAre you sure?';
+    if (!confirm(msg)) return;
+    var btn = this; btn.textContent = '...'; btn.disabled = true;
+    doneItems.forEach(function(e) { e.todo_date = null; });
+    var undoneNames = undoneItems.map(function(e) { return e.question_name; });
+    window.IB.allEntries = window.IB.allEntries.filter(function(e) { return !undoneNames.includes(e.question_name); });
+    await window.IB.saveCache(window.IB.allEntries);
+    if (useFirebase()) {
+      for (var i = 0; i < doneItems.length; i++) {
+        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
+      }
+      for (var j = 0; j < undoneItems.length; j++) {
+        try { await window.IB.fsDelete(undoneItems[j].subject || 'other', undoneItems[j].question_name); } catch(_) {}
+      }
+    }
+    await markDoneOnPage();
+    notifyContentScriptTodoReset();
     renderTodayPanel();
   });
 }
 
 // ── Favourites panel ──────────────────────────────────────────────────────────
+
+function notifyContentScriptTodoReset() {
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'resetTodoCheckboxes' });
+  });
+}
 
 function renderFavouritesPanel() {
   var filter = (document.getElementById('fav-filter').value || '').toLowerCase();
@@ -279,17 +325,58 @@ function renderEntryList() {
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
   var filtered = window.IB.allEntries.filter(function (e) {
     if (!filter) return true;
-    return (e.question_name || '').toLowerCase().includes(filter) || (e.subject || '').toLowerCase().includes(filter) || (e.old_topics || '').toLowerCase().includes(filter);
+    return (e.question_name || '').toLowerCase().includes(filter) ||
+           (e.subject || '').toLowerCase().includes(filter) ||
+           (e.old_topics || '').toLowerCase().includes(filter);
   });
   var listEl = document.getElementById('entry-list');
   if (filtered.length === 0) {
-    listEl.innerHTML = '<div class="empty-db">' + (window.IB.allEntries.length === 0 ? 'No questions logged yet.<br>Go to an ExamMate page and log questions.' : 'No results for "' + filter + '"') + '</div>';
+    listEl.innerHTML = '<div class="empty-db">' + (window.IB.allEntries.length === 0 ?
+      'No questions marked as done yet.<br>Go to an ExamMate page and use the Log tab.' :
+      'No results for "' + filter + '"') + '</div>';
     return;
   }
-  listEl.innerHTML = filtered.map(function (e) {
-    var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
-    return '<div class="entry-item"><div style="flex:1;min-width:0;"><div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:#185FA5;">' + (e.question_name || '—') + favIcon + '</div><div class="entry-meta">' + (e.subject || '') + ' · ' + (e.question_imgs || []).length + 'Q ' + (e.answer_imgs || []).length + 'A · ' + (e.logged_at || '') + '</div></div><button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button></div>';
-  }).join('');
+
+  // Group by subject
+  var today = new Date().toISOString().split('T')[0];
+  var groups = {};
+  filtered.forEach(function(e) {
+    var s = e.subject || 'other';
+    if (!groups[s]) groups[s] = [];
+    groups[s].push(e);
+  });
+
+  var SUBJECT_ORDER = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
+  var SUBJECT_LABELS = { chemistry: '⚗ Chemistry', physics: '⚛ Physics', mathematics: '∑ Mathematics', biology: '🌿 Biology', other: '📚 Other' };
+  var SUBJECT_COLORS = { chemistry: '#0F6E56', physics: '#185FA5', mathematics: '#6A1B9A', biology: '#2E7D32', other: '#555' };
+
+  var allSubjects = Object.keys(groups).sort(function(a, b) {
+    var ia = SUBJECT_ORDER.indexOf(a), ib = SUBJECT_ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  var html = '';
+  allSubjects.forEach(function(subj) {
+    var entries = groups[subj];
+    var label = SUBJECT_LABELS[subj] || subj;
+    var color = SUBJECT_COLORS[subj] || '#555';
+    html += '<div class="db-subject-heading" style="color:' + color + ';">' + label + '<span class="db-subject-count">' + entries.length + '</span></div>';
+    entries.forEach(function(e) {
+      var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
+      var isTodo = e.todo_date === today;
+      var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
+      var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
+      html += '<div class="entry-item">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + '</div>' +
+          '<div class="entry-meta">' + (e.question_imgs || []).length + 'Q ' + (e.answer_imgs || []).length + 'A · ' + timeStr + '</div>' +
+        '</div>' +
+        '<button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button>' +
+      '</div>';
+    });
+  });
+  listEl.innerHTML = html;
+
   listEl.querySelectorAll('.del-btn').forEach(function (btn) {
     btn.addEventListener('click', async function () {
       var name = this.getAttribute('data-name'), subj = this.getAttribute('data-subject');

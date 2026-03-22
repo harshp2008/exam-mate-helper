@@ -77,6 +77,11 @@
     .del-btn { font-size: 11px; color: #ccc; cursor: pointer; padding: 2px 4px; border: none; background: none; flex-shrink: 0; transition: color 0.1s; }
     .del-btn:hover { color: #A32D2D; }
     .empty-db { text-align: center; padding: 24px; color: #aaa; font-size: 12px; }
+    .db-subject-heading { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; padding: 8px 10px 4px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #f0f0f0; margin-top: 2px; }
+    .db-subject-heading:first-child { border-top: none; margin-top: 0; }
+    .db-subject-count { font-size: 9px; background: #f0f0f0; color: #888; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+    .db-todo-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 4px; background: #E3F2FD; color: #1565C0; margin-left: 5px; font-weight: 600; }
+    .db-not-done { color: #FF8F00; font-style: italic; font-size: 9px; font-weight: 600; }
 
     /* Today panel */
     .today-item { padding: 9px 10px; border-bottom: 1px solid #E3F2FD; display: flex; align-items: center; gap: 8px; }
@@ -93,6 +98,17 @@
     .today-clear-btn { font-size: 11px; padding: 5px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; color: #555; cursor: pointer; }
     .today-clear-btn:hover { background: #f0f0f0; }
     .empty-today { text-align: center; padding: 32px 16px; color: #aaa; font-size: 12px; line-height: 1.8; }
+    .today-btn-group { display: flex; align-items: center; gap: 4px; }
+    .today-more-wrap { position: relative; }
+    .today-more-btn { padding: 5px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fafafa; color: #555; cursor: pointer; line-height: 1; transition: background 0.1s; }
+    .today-more-btn:hover { background: #f0f0f0; }
+    .today-more-dropdown { display: none; position: absolute; right: 0; top: 110%; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 100; min-width: 240px; overflow: hidden; }
+    .today-more-dropdown.open { display: block; }
+    .today-more-info { padding: 10px 14px; font-size: 11px; color: #666; line-height: 1.5; border-bottom: 1px solid #f0f0f0; background: #FAEEDA; }
+    .today-more-item { padding: 9px 14px; font-size: 12px; cursor: pointer; color: #333; transition: background 0.1s; display: block; width: 100%; text-align: left; border: none; background: none; }
+    .today-more-item:hover { background: #f5f5f5; }
+    .today-more-item.danger { color: #A32D2D; font-weight: 600; }
+    .today-more-item.danger:hover { background: #FCEBEB; }
 
     /* Favourites panel */
     .fav-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
@@ -187,8 +203,8 @@
           </div>
         </div>
       </div>
-      <button class="log-btn" id="log-btn"><span id="log-btn-text">Log this question</span></button>
-      <button class="log-all-btn" id="log-all-btn">Log all questions in sidebar list</button>
+      <button class="log-btn" id="log-btn"><span id="log-btn-text">Mark as done</span></button>
+      <button class="log-all-btn" id="log-all-btn">Mark all visible sidebar questions as done</button>
       <div class="inline-msg" id="inline-msg"></div>
     </div>
   </div>
@@ -219,7 +235,7 @@
       <div class="stat-card"><div class="stat-val" id="stat-subjects">0</div><div class="stat-label">Subjects</div></div>
     </div>
     <div class="db-toolbar">
-      <input class="db-filter" type="text" id="db-filter" placeholder="Filter by name or subject..." />
+      <input class="db-filter" type="text" id="db-filter" placeholder="Search by name, subject, or topic…" />
       <button class="db-action-btn" id="sync-btn">↻ Sync</button>
       <div class="more-menu">
         <button class="more-btn" id="more-btn">⋮</button>
