@@ -6,7 +6,7 @@ async function markDoneOnPage() {
   try {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     var tab = tabs[0];
-    if (!tab || !tab.url || !tab.url.includes('exam-mate.com')) return;
+    if (!tab || !tab.url || !tab.url.includes('exam-mate.com/topicalpastpapers')) return;
     var allNames = window.IB.allEntries.map(function (e) { return e.question_name; });
     var favNames = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
     var today = new Date().toISOString().split('T')[0];

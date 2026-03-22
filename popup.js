@@ -73,8 +73,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     tab = tabs[0];
   } catch (e) { showPageError('Could not access browser tabs.'); return; }
 
-  if (!tab || !tab.url || !tab.url.includes('exam-mate.com')) {
-    showPageError('Open an ExamMate page first,\nthen click the extension.');
+  if (!tab || !tab.url || !tab.url.includes('exam-mate.com/topicalpastpapers')) {
+    showPageError('Open an ExamMate topical past papers page first,\nthen click the extension.');
     return;
   }
   // Scrape with retry — ExamMate (Livewire) sometimes hasn't embedded onclick

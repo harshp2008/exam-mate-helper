@@ -24,7 +24,7 @@ function switchView(view) {
 
 function showStatusToast() {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    if (tabs[0] && tabs[0].url.includes('exam-mate.com')) {
+    if (tabs[0] && tabs[0].url.includes('exam-mate.com/topicalpastpapers')) {
       chrome.tabs.sendMessage(tabs[0].id, {
         action: 'showToast',
         mode: useFirebase() ? 'firebase' : 'local'
@@ -145,7 +145,7 @@ function renderTodayPanel() {
   
   if (todayItems.length === 0) {
     panel.innerHTML = '<div class="empty-today">No questions queued for today.<br>' +
-      'Use the ☐ Select button in the<br>ExamMate sidebar to build your queue.</div>';
+      'Use the To-Do button in the<br>ExamMate sidebar to build your queue.</div>';
     return;
   }
 

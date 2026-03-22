@@ -11,7 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.exam-mate.com/*",
+    "https://www.exam-mate.com/topicalpastpapers*",
     "https://firestore.googleapis.com/*",
     "https://openrouter.ai/*"
   ],
@@ -26,7 +26,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.exam-mate.com/*"
+        "https://www.exam-mate.com/topicalpastpapers*"
       ],
       "js": [
         "content-styles.js",
