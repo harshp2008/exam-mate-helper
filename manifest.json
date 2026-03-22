@@ -7,7 +7,6 @@
     "activeTab",
     "storage",
     "clipboardWrite",
-    "contextMenus",
     "alarms",
     "tabs"
   ],
@@ -30,6 +29,8 @@
         "https://www.exam-mate.com/*"
       ],
       "js": [
+        "content-styles.js",
+        "content-ui.js",
         "content.js"
       ]
     }
