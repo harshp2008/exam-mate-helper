@@ -34,6 +34,7 @@
         "src/content/content-helpers.js",
         "src/content/content-todo.js",
         "src/content/content-checkboxes.js",
+        "src/content/lib/pixelmatch.js",
         "src/content/content-duplicates.js",
         "src/content/content-messages.js",
         "src/content/content-init.js"

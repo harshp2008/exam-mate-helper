@@ -9,9 +9,10 @@
  * Returns null if name doesn't match the expected pattern.
  */
 function parseIBName(name) {
-  var m = (name || '').match(/^([A-Z]+)\/(\d)(\d)_(.+)$/);
+  // Relaxed regex to handle slashes or dashes, and more flexible "rest" part
+  var m = (name || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?(.+)$/i);
   if (!m) return null;
-  return { subject: m[1], paper: m[2], tz: parseInt(m[3], 10), rest: m[4] };
+  return { subject: m[1].toUpperCase(), paper: m[2], tz: parseInt(m[3], 10), rest: m[4] };
 }
 
 // ── Image comparison ──────────────────────────────────────────────────────────
@@ -22,14 +23,14 @@ function parseIBName(name) {
  * Uses willReadFrequently:true to suppress the console warning.
  */
 function compareAllImages(imgs1, imgs2) {
-  // Pair up images by index (up to min length)
-  var pairCount = Math.min(imgs1.length, imgs2.length);
-  if (pairCount === 0) return Promise.resolve(0);
+  if (!imgs1 || !imgs2 || imgs1.length === 0 || imgs2.length === 0) return Promise.resolve(0);
+  
+  // Rule 1: Different number of images = different questions
+  if (imgs1.length !== imgs2.length) return Promise.resolve(0);
 
   function loadImg(url) {
     return new Promise(function(res, rej) {
       var img = new Image();
-      // No crossOrigin — same-origin images don't need it and it avoids CORS rejection
       img.onload = function() { res(img); };
       img.onerror = function() { rej(new Error('load')); };
       img.src = url + (url.includes('?') ? '&' : '?') + '_nc=' + Date.now();
@@ -39,41 +40,59 @@ function compareAllImages(imgs1, imgs2) {
   function comparePair(url1, url2) {
     return Promise.all([loadImg(url1), loadImg(url2)]).then(function(imgs) {
       var img1 = imgs[0], img2 = imgs[1];
-      var W = Math.max(img1.naturalWidth  || img1.width,  1);
-      var H = Math.max(img1.naturalHeight || img1.height, 1);
-      // Cap to 600px to avoid massive memory usage on huge images
+      var W1 = img1.naturalWidth || img1.width || 1;
+      var H1 = img1.naturalHeight || img1.height || 1;
+      var W2 = img2.naturalWidth || img2.width || 1;
+      var H2 = img2.naturalHeight || img2.height || 1;
+
+      // Rule 2: If physical dimensions differ significantly, reject
+      var hDiff = Math.abs(H1 - H2) / Math.max(H1, H2);
+      var wDiff = Math.abs(W1 - W2) / Math.max(W1, W2);
+      if (hDiff > 0.12 || wDiff > 0.12) {
+        console.log('[IB Auto-Dup] Size mismatch: (hDiff=' + Math.round(hDiff*100) + '%, wDiff=' + Math.round(wDiff*100) + '%) for ' + url1);
+        return 0; 
+      }
+
+      var W = Math.min(W1, W2), H = Math.min(H1, H2);
+      // Cap for performance
       if (W > 600) { H = Math.round(H * 600 / W); W = 600; }
       if (H > 600) { W = Math.round(W * 600 / H); H = 600; }
 
-      var canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      var ctx = canvas.getContext('2d', { willReadFrequently: true });
+      var canvas1 = document.createElement('canvas');
+      canvas1.width = W; canvas1.height = H;
+      var ctx1 = canvas1.getContext('2d', { willReadFrequently: true });
+      ctx1.drawImage(img1, 0, 0, W, H);
+      var d1 = ctx1.getImageData(0, 0, W, H);
 
-      ctx.drawImage(img1, 0, 0, W, H);
-      var d1 = ctx.getImageData(0, 0, W, H).data;
+      var canvas2 = document.createElement('canvas');
+      canvas2.width = W; canvas2.height = H;
+      var ctx2 = canvas2.getContext('2d', { willReadFrequently: true });
+      ctx2.drawImage(img2, 0, 0, W, H);
+      var d2 = ctx2.getImageData(0, 0, W, H);
 
-      ctx.clearRect(0, 0, W, H);
-      ctx.drawImage(img2, 0, 0, W, H);
-      var d2 = ctx.getImageData(0, 0, W, H).data;
+      // Use the official pixelmatch library (available globally from src/content/lib/pixelmatch.js)
+      // threshold: 0.1 is standard, but we'll use 0.12 for more leniency on text-heavy images
+      var mismatchedPixels = pixelmatch(d1.data, d2.data, null, W, H, { 
+        threshold: 0.12, 
+        includeAA: false 
+      });
 
-      var match = 0, total = W * H;
-      for (var i = 0; i < d1.length; i += 4) {
-        var diff = (Math.abs(d1[i] - d2[i]) + Math.abs(d1[i+1] - d2[i+1]) + Math.abs(d1[i+2] - d2[i+2])) / 3;
-        if (diff < 20) match++;
-      }
-      return match / total;
-    }).catch(function() { return -1; }); // -1 = couldn't compare, ignore this pair
+      var pixelSim = 1 - (mismatchedPixels / (W * H));
+      return pixelSim * (1 - (hDiff + wDiff));
+    }).catch(function() { return -1; });
   }
 
   var pairs = [];
-  for (var i = 0; i < pairCount; i++) {
+  for (var i = 0; i < imgs1.length; i++) {
     pairs.push(comparePair(imgs1[i], imgs2[i]));
   }
 
   return Promise.all(pairs).then(function(scores) {
-    var valid = scores.filter(function(s) { return s >= 0; });
-    if (valid.length === 0) return 0;
-    return valid.reduce(function(a, b) { return a + b; }, 0) / valid.length;
+    if (scores.length === 0) return 0;
+    // ALL pairs must be valid and meet a minimum threshold
+    var minScore = Math.min.apply(null, scores);
+    if (minScore < 0) return 0; 
+    return minScore; // Strictly controlled by the weakest matching pair
   });
 }
 
@@ -99,40 +118,44 @@ function autoFindDuplicates() {
 
     // Also read question names + image URLs from the current page DOM as a supplement
     var pageImgMap = {};  // name → [imgUrls]
-    var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"][onclick]');
+    var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"]');
     pageItems.forEach(function(li) {
-      try {
-        var onc = li.getAttribute('onclick') || '';
-        var jsonMatch = onc.match(/selectQuestion\(\d+,\d+,'(.+)'\)(?:\s*)$/);
-        if (!jsonMatch) return;
-        var data = JSON.parse(jsonMatch[1]);
-        var realName = (li.querySelector('.ib-qname-text') || {}).getAttribute('data-realname') ||
-                       (li.querySelector('.ib-qname-text') || {}).textContent || '';
-        realName = realName.trim();
-        if (realName && data.question_images && data.question_images.length > 0) {
-          pageImgMap[realName] = data.question_images;
-        }
-      } catch(e) {}
-    });
-
-    // Augment entries: if entry lacks images but page has them, fill in
-    var entryMap = {};
-    entries.forEach(function(e) {
-      entryMap[e.question_name] = e;
-      if ((!e.question_imgs || e.question_imgs.length === 0) && pageImgMap[e.question_name]) {
-        e.question_imgs = pageImgMap[e.question_name];
+      var data = (typeof parseOnclickData === 'function') ? parseOnclickData(li) : null;
+      var textEl = li.querySelector('.ib-qname-text') || li.querySelector('span');
+      var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
+      
+      if (realName && data && data.question_images && data.question_images.length > 0) {
+        pageImgMap[realName] = data.question_images;
       }
     });
 
-    // Parse every entry and group candidates by (subject, paper, rest) — differ only in tz
-    var buckets = {};  // key → list of entries
-    entries.forEach(function(e) {
-      var p = parseIBName(e.question_name);
+    console.log('[IB Auto-Dup] Harvesed ' + Object.keys(pageImgMap).length + ' image sets from current page.');
+
+    // 3. Build the pool: entries from background + harvested from current page
+    var pool = [].concat(entries);
+    Object.keys(pageImgMap).forEach(function(pName) {
+      if (!pool.some(function(e) { return e.question_name === pName; })) {
+        pool.push({
+          question_name: pName,
+          question_imgs: pageImgMap[pName],
+          subject: (typeof inferSubject === 'function') ? inferSubject(pName) : 'other'
+        });
+      }
+    });
+
+    console.log('[IB Auto-Dup] Pool size for comparison: ' + pool.length + ' questions.');
+
+    // Parse every pool item and group candidates by (subject, paper, rest) — differ only in tz
+    var buckets = {};  
+    pool.forEach(function(e) {
+      var p = (typeof parseIBName === 'function') ? parseIBName(e.question_name) : null;
       if (!p) return;
       var key = p.subject + '/' + p.paper + '_' + p.rest;
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ entry: e, tz: p.tz });
     });
+
+    console.log('[IB Auto-Dup] Bucketed into ' + Object.keys(buckets).length + ' groups. Checking for multi-member buckets...');
 
     // Collect candidate groups: ≥2 members, at least pair not already grouped together
     var pendingPairs = [];
@@ -148,9 +171,13 @@ function autoFindDuplicates() {
       pendingPairs.push(bucket);
     });
 
-    if (pendingPairs.length === 0) { _autoDupRunning = false; return; }
+    console.log('[IB Auto-Dup] Identified ' + pendingPairs.length + ' potential duplicate candidate group(s).');
 
-    console.log('[IB Auto-Dup] Checking', pendingPairs.length, 'candidate group(s)...');
+    if (pendingPairs.length === 0) {
+      console.log('[IB Auto-Dup] No new candidates to check.');
+      _autoDupRunning = false;
+      return;
+    }
 
     var idx = 0;
     function processNext() {
@@ -173,8 +200,8 @@ function autoFindDuplicates() {
       }
 
       compareAllImages(e1.entry.question_imgs, e2.entry.question_imgs).then(function(similarity) {
-        console.log('[IB Auto-Dup]', e1.entry.question_name, 'vs', e2.entry.question_name, '→', Math.round(similarity * 100) + '%');
-        if (similarity >= 0.85) {
+        console.log('[IB Auto-Dup] ' + e1.entry.question_name + ' vs ' + e2.entry.question_name + ' → ' + Math.round(similarity * 100) + '%');
+        if (similarity >= 0.90) {
           var allNames = bucket.map(function(b) { return b.entry.question_name; });
           // Primary = highest timezone number
           var primary = bucket.reduce(function(best, b) {
