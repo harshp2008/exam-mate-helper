@@ -1,6 +1,13 @@
 // popup-settings.js — Settings panel logic for IB Exam Logger
+import { updateSyncBtnState, syncFromFirestore } from './popup-actions.js';
 
-function populateSettingsUI() {
+export function useFirebase() {
+  return window.IB.credentialsValid && window.IB.appSettings.mode === 'firebase' && window.IB.appSettings.firebaseApiKey && window.IB.appSettings.firebaseProjectId;
+}
+window.useFirebase = useFirebase;
+window.IB.useFirebase = useFirebase;
+
+export function populateSettingsUI() {
   var displayMode = window.IB.appSettings.mode || 'local';
 
   document.getElementById('mode-local').classList.toggle('active', displayMode === 'local');
@@ -42,8 +49,9 @@ function populateSettingsUI() {
     fallbackEl.style.display = 'none';
   }
 }
+window.populateSettingsUI = populateSettingsUI;
 
-function setMode(mode) {
+export function setMode(mode) {
   window.IB.appSettings.mode = mode;
   document.getElementById('mode-local').classList.toggle('active', mode === 'local');
   document.getElementById('mode-firebase').classList.toggle('active', mode === 'firebase');
@@ -56,8 +64,9 @@ function setMode(mode) {
   document.getElementById('settings-error').style.display = 'none';
   document.getElementById('settings-fallback').style.display = 'none';
 }
+window.setMode = setMode;
 
-async function saveSettings() {
+export async function saveSettings() {
   var pid = document.getElementById('s-project-id').value.trim();
   var akey = document.getElementById('s-api-key').value.trim();
   var mode = window.IB.appSettings.mode || 'local';
@@ -118,3 +127,4 @@ async function saveSettings() {
     if (useFirebase()) syncFromFirestore(false);
   }
 }
+window.saveSettings = saveSettings;

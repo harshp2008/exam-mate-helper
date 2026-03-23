@@ -1,7 +1,19 @@
-// popup.js — IB Exam Logger
+// popup.js — Main logic for IB Exam Logger popup
+import { loadSettings, loadCache, loadDuplicates } from './storage.js';
+import { validateFirebaseCredentials } from './firestore.js';
+import { 
+  switchView, renderCurrentQuestion, renderEntryList, renderFavouritesPanel, 
+  showPageError, showStatusToast 
+} from './popup-render.js';
+import { 
+  logCurrent, logAll, syncFromFirestore, exportJSON, clearAll, updateSyncBtnState 
+} from './popup-actions.js';
+import { populateSettingsUI, setMode, saveSettings, useFirebase } from './popup-settings.js';
+import { initDuplicateModal, openDuplicateModal, closeDuplicateModal } from './popup-duplicates.js';
 
 window.IB = window.IB || {};
 
+// Global state moved to window.IB for across-module access
 window.IB.currentData = null;
 window.IB.allEntries = [];
 window.IB.sidebarQuestions = [];
@@ -10,25 +22,22 @@ window.IB.duplicatesDB = [];
 window.IB.credentialsValid = false; // tracks whether Firebase credentials passed validation
 window.IB.previousView = ''; // Tracks the previously active view
 
-function useFirebase() {
-  return window.IB.credentialsValid && window.IB.appSettings.mode === 'firebase' && window.IB.appSettings.firebaseApiKey && window.IB.appSettings.firebaseProjectId;
-}
-
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async function () {
-  window.IB.appSettings = await window.IB.loadSettings();
+  // 1. Load basic settings
+  window.IB.appSettings = await loadSettings();
 
-  // Validate credentials silently on load if Firebase mode
+  // 2. Validate credentials silently on load if Firebase mode
   if (window.IB.appSettings.mode === 'firebase' && window.IB.appSettings.firebaseApiKey && window.IB.appSettings.firebaseProjectId) {
-    var check = await window.IB.validateFirebaseCredentials(window.IB.appSettings.firebaseProjectId, window.IB.appSettings.firebaseApiKey);
+    var check = await validateFirebaseCredentials(window.IB.appSettings.firebaseProjectId, window.IB.appSettings.firebaseApiKey);
     window.IB.credentialsValid = check.ok;
     if (!check.ok) window.IB.appSettings._credError = check.error;
   } else {
     window.IB.credentialsValid = false;
   }
 
-  // Nav
+  // 3. Setup Navigation
   window.IB.previousView = 'log'; // Initial view
   document.getElementById('btn-log-view').addEventListener('click', function () { switchView('log'); });
   document.getElementById('btn-today-view').addEventListener('click', function () { switchView('today'); });
@@ -36,22 +45,22 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('btn-db-view').addEventListener('click', function () { switchView('db'); });
   document.getElementById('btn-settings-view').addEventListener('click', function () { switchView('settings'); });
   document.getElementById('btn-dups-view').addEventListener('click', function () { switchView('dups'); });
-  document.getElementById('dup-modal-close-btn').addEventListener('click', window.IB.closeDuplicateModal);
+  document.getElementById('dup-modal-close-btn').addEventListener('click', closeDuplicateModal);
 
-  // Trigger new group modal from Dups panel toolbar
+  // 4. Trigger new group modal from Dups panel toolbar
   document.getElementById('dups-new-btn').addEventListener('click', function () {
     var currentQ = window.IB.currentData ? window.IB.currentData.question_name : '';
-    window.IB.openDuplicateModal(currentQ);
+    openDuplicateModal(currentQ);
   });
 
-  // Init duplicate modal event wiring
-  window.IB.initDuplicateModal();
+  // 5. Init duplicate modal event wiring
+  initDuplicateModal();
 
-  // Log panel
+  // 6. Log panel actions
   document.getElementById('log-btn').addEventListener('click', logCurrent);
   document.getElementById('log-all-btn').addEventListener('click', logAll);
 
-  // DB panel
+  // 7. DB panel actions
   document.getElementById('sync-btn').addEventListener('click', function () { syncFromFirestore(false); });
   document.getElementById('export-btn').addEventListener('click', exportJSON);
   document.getElementById('clear-btn').addEventListener('click', clearAll);
@@ -62,24 +71,24 @@ document.addEventListener('DOMContentLoaded', async function () {
   });
   document.addEventListener('click', function () { document.getElementById('more-dropdown').classList.remove('open'); });
 
-  // Favourites panel
+  // 8. Favourites panel
   document.getElementById('fav-filter').addEventListener('input', renderFavouritesPanel);
 
-  // Settings
+  // 9. Settings panel actions
   document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
   document.getElementById('mode-local').addEventListener('click', function () { setMode('local'); });
   document.getElementById('mode-firebase').addEventListener('click', function () { setMode('firebase'); });
 
-  // Load cache, update sync btn state, populate settings
-  window.IB.allEntries = await window.IB.loadCache();
-  window.IB.duplicatesDB = await window.IB.loadDuplicates();
+  // 10. Load cached data and sync UI
+  window.IB.allEntries = await loadCache();
+  window.IB.duplicatesDB = await loadDuplicates();
   updateSyncBtnState();
   populateSettingsUI();
 
-  // Background sync
+  // 11. Silent background sync
   syncFromFirestore(true);
 
-  // Scrape current page
+  // 12. Scrape current page
   var tab;
   try {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -90,17 +99,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     showPageError('Open an ExamMate topical past papers page first,\nthen click the extension.');
     return;
   }
-  // Scrape with retry — ExamMate (Livewire) sometimes hasn't embedded onclick
-  // data into the active sidebar <li> yet when the page first loads.
-  // content.js auto-clicks the li after 600ms to force Livewire to attach it;
-  // we retry here to give that a chance to complete before showing an error.
+  
+  // Scrape with retry for Livewire sync
   var MAX_RETRIES = 3;
   var RETRY_DELAY_MS = 800;
   for (var attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       var response = await chrome.tabs.sendMessage(tab.id, { action: 'scrape' });
       if (response && response.error === 'Could not parse onclick data.' && attempt < MAX_RETRIES) {
-        // Livewire data not ready yet — wait and retry silently
         await new Promise(function(r) { setTimeout(r, RETRY_DELAY_MS); });
         continue;
       }
@@ -124,7 +130,7 @@ chrome.runtime.onMessage.addListener(function(request) {
   }
   if (request.action === 'openDuplicateModal' || request.action === 'openDuplicateModalInPopup') {
     var currentQ = window.IB.currentData ? window.IB.currentData.question_name : (request.questionName || '');
-    window.IB.openDuplicateModal(currentQ);
+    openDuplicateModal(currentQ);
   }
 });
 

@@ -1,8 +1,12 @@
 // popup-render.js — UI render functions for IB Exam Logger
+import { useFirebase, populateSettingsUI } from './popup-settings.js';
+import { markDoneOnPage } from './popup-actions.js';
+import { loadCache, saveCache } from './storage.js';
+import { fsWrite, fsDelete } from './firestore.js';
 
 // ── View switching ────────────────────────────────────────────────────────────
 
-function switchView(view) {
+export function switchView(view) {
   if (window.IB.previousView === 'settings' && view !== 'settings') {
     showStatusToast();
   }
@@ -22,8 +26,9 @@ function switchView(view) {
 
   window.IB.previousView = view;
 }
+window.switchView = switchView;
 
-function showStatusToast() {
+export function showStatusToast() {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (tabs[0] && tabs[0].url.includes('exam-mate.com/topicalpastpapers')) {
       chrome.tabs.sendMessage(tabs[0].id, {
@@ -33,16 +38,20 @@ function showStatusToast() {
     }
   });
 }
+window.showStatusToast = showStatusToast;
 
 // ── Log panel ─────────────────────────────────────────────────────────────────
 
-function showPageError(msg) {
+export function showPageError(msg) {
   document.getElementById('no-page-msg').style.display = 'block';
   document.getElementById('no-page-msg').textContent = msg;
   document.getElementById('page-content').style.display = 'none';
 }
+window.showPageError = showPageError;
 
-function renderCurrentQuestion(data) {
+window.renderCurrentQuestion = renderCurrentQuestion;
+
+export function renderCurrentQuestion(data) {
   document.getElementById('no-page-msg').style.display = 'none';
   document.getElementById('page-content').style.display = 'block';
   document.getElementById('q-name').textContent = data.question_name || 'Unknown';
@@ -92,8 +101,9 @@ async function loadQuestionsPanel() {
     renderQuestionsPanel();
   } catch (e) { listEl.innerHTML = '<div class="qp-loading">Error: ' + e.message + '</div>'; }
 }
+window.loadQuestionsPanel = loadQuestionsPanel;
 
-function renderQuestionsPanel() {
+export function renderQuestionsPanel() {
   var listEl = document.getElementById('qp-list');
   var countEl = document.getElementById('qp-count');
   if (window.IB.sidebarQuestions.length === 0) { countEl.textContent = '0 questions'; listEl.innerHTML = '<div class="qp-loading">No questions found.</div>'; return; }
@@ -113,9 +123,9 @@ function renderQuestionsPanel() {
       var name = this.getAttribute('data-name'), subj = this.getAttribute('data-subject');
       this.textContent = '...'; this.disabled = true;
       try {
-        if (useFirebase()) await window.IB.fsDelete(subj, name);
+        if (useFirebase()) await fsDelete(subj, name);
         window.IB.allEntries = window.IB.allEntries.filter(function (e) { return e.question_name !== name; });
-        await window.IB.saveCache(window.IB.allEntries); await markDoneOnPage();
+        await saveCache(window.IB.allEntries); await markDoneOnPage();
         if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
         renderQuestionsPanel();
         showQpMsg('success', '"' + name + '" removed — ready to redo.');
@@ -123,16 +133,20 @@ function renderQuestionsPanel() {
     });
   });
 }
+window.renderQuestionsPanel = renderQuestionsPanel;
 
 function showQpMsg(type, text) {
   var el = document.getElementById('qp-msg');
+  if (!el) return;
   el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block';
   setTimeout(function () { el.style.display = 'none'; }, 3000);
 }
 
 // ── Today panel ───────────────────────────────────────────────────────────────
 
-function renderTodayPanel() {
+window.renderTodayPanel = renderTodayPanel;
+
+export function renderTodayPanel() {
   var today = new Date().toISOString().split('T')[0];
   var todayItems = window.IB.allEntries.filter(function(e) { 
     return e.todo_date === today; 
@@ -193,8 +207,8 @@ function renderTodayPanel() {
       if (entry) {
         btn.textContent = '...'; btn.disabled = true;
         entry.todo_date = null;
-        await window.IB.saveCache(window.IB.allEntries);
-        if (useFirebase()) await window.IB.fsWrite(entry);
+        await saveCache(window.IB.allEntries);
+        if (useFirebase()) await fsWrite(entry);
         await markDoneOnPage();
         renderTodayPanel();
       }
@@ -212,16 +226,16 @@ function renderTodayPanel() {
     document.removeEventListener('click', todayClose);
   });
 
-  // Clear Completed: only remove to-do status for done items
+  // Clear Completed
   document.getElementById('today-clear-completed-btn').addEventListener('click', async function() {
     if (doneItems.length === 0) { return; }
     if (!confirm('Remove ' + doneItems.length + ' completed question(s) from your queue?')) return;
     var btn = this; btn.textContent = '...'; btn.disabled = true;
     doneItems.forEach(function(e) { e.todo_date = null; });
-    await window.IB.saveCache(window.IB.allEntries);
+    await saveCache(window.IB.allEntries);
     if (useFirebase()) {
       for (var i = 0; i < doneItems.length; i++) {
-        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
+        try { await fsWrite(doneItems[i]); } catch(_) {}
       }
     }
     await markDoneOnPage();
@@ -229,7 +243,7 @@ function renderTodayPanel() {
     renderTodayPanel();
   });
 
-  // Clear All: remove done todo status AND delete undone entries from DB
+  // Clear All
   document.getElementById('today-clear-all-btn').addEventListener('click', async function() {
     var msg = 'This will:\n\u2022 Remove ' + doneItems.length + ' completed question(s) from your queue\n\u2022 PERMANENTLY DELETE ' + undoneItems.length + ' unfinished question(s) from the database\n\nAre you sure?';
     if (!confirm(msg)) return;
@@ -237,13 +251,13 @@ function renderTodayPanel() {
     doneItems.forEach(function(e) { e.todo_date = null; });
     var undoneNames = undoneItems.map(function(e) { return e.question_name; });
     window.IB.allEntries = window.IB.allEntries.filter(function(e) { return !undoneNames.includes(e.question_name); });
-    await window.IB.saveCache(window.IB.allEntries);
+    await saveCache(window.IB.allEntries);
     if (useFirebase()) {
       for (var i = 0; i < doneItems.length; i++) {
-        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
+        try { await fsWrite(doneItems[i]); } catch(_) {}
       }
       for (var j = 0; j < undoneItems.length; j++) {
-        try { await window.IB.fsDelete(undoneItems[j].subject || 'other', undoneItems[j].question_name); } catch(_) {}
+        try { await fsDelete(undoneItems[j].subject || 'other', undoneItems[j].question_name); } catch(_) {}
       }
     }
     await markDoneOnPage();
@@ -252,15 +266,21 @@ function renderTodayPanel() {
   });
 }
 
+export async function notifyContentScriptTodoReset() {
+  try {
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) {
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'todoReset' });
+    }
+  } catch (e) {}
+}
+window.notifyContentScriptTodoReset = notifyContentScriptTodoReset;
+
 // ── Favourites panel ──────────────────────────────────────────────────────────
 
-function notifyContentScriptTodoReset() {
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-    if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'resetTodoCheckboxes' });
-  });
-}
+window.renderFavouritesPanel = renderFavouritesPanel;
 
-function renderFavouritesPanel() {
+export function renderFavouritesPanel() {
   var filter = (document.getElementById('fav-filter').value || '').toLowerCase();
   var favs = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; });
   var filtered = filter ? favs.filter(function (e) {
@@ -321,8 +341,8 @@ function renderFavouritesPanel() {
         var entry = window.IB.allEntries.find(function (e) { return e.question_name === name; });
         if (entry) {
           entry.is_favourite = false;
-          await window.IB.saveCache(window.IB.allEntries);
-          if (useFirebase()) await window.IB.fsWrite(entry);
+          await saveCache(window.IB.allEntries);
+          if (useFirebase()) await fsWrite(entry);
           await markDoneOnPage();
           renderFavouritesPanel();
           showFavMsg('success', '"' + name + '" removed from favourites.');
@@ -340,7 +360,9 @@ function showFavMsg(type, text) {
 
 // ── Dups panel ────────────────────────────────────────────────────────────────
 
-function renderDupsPanel() {
+window.renderDupsPanel = renderDupsPanel;
+
+export function renderDupsPanel() {
   var groups = window.IB.duplicatesDB || [];
   var countEl = document.getElementById('dups-count');
   var listEl = document.getElementById('dup-group-list');
@@ -411,7 +433,7 @@ function renderDupsPanel() {
 }
 
 
-function renderDBPanel() {
+export function renderDBPanel() {
   // Non-primary duplicates are excluded from all counts and the list
   function isNonPrimaryDup(e) {
     return e.repeated_question && e.repeated_question.is_primary === false;
@@ -427,7 +449,7 @@ function renderDBPanel() {
   renderEntryList();
 }
 
-function renderEntryList() {
+export function renderEntryList() {
   function isNonPrimaryDup(e) {
     return e.repeated_question && e.repeated_question.is_primary === false;
   }
@@ -505,9 +527,9 @@ function renderEntryList() {
     btn.addEventListener('click', async function () {
       var name = this.getAttribute('data-name'), subj = this.getAttribute('data-subject');
       try {
-        if (useFirebase()) await window.IB.fsDelete(subj, name);
+        if (useFirebase()) await fsDelete(subj, name);
         window.IB.allEntries = window.IB.allEntries.filter(function (e) { return e.question_name !== name; });
-        await window.IB.saveCache(window.IB.allEntries); await markDoneOnPage(); renderDBPanel();
+        await saveCache(window.IB.allEntries); await markDoneOnPage(); renderDBPanel();
       } catch (e) { showMsg('error', 'Delete failed: ' + e.message); }
     });
   });
@@ -537,10 +559,10 @@ document.addEventListener('click', function(e) {
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
-function showMsg(type, text) { var el = document.getElementById('inline-msg'); if (!el) return; el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block'; }
-function clearMsg() { var el = document.getElementById('inline-msg'); if (el) el.style.display = 'none'; }
+export function showMsg(type, text) { var el = document.getElementById('inline-msg'); if (!el) return; el.textContent = text; el.className = 'inline-msg ' + type; el.style.display = 'block'; }
+export function clearMsg() { var el = document.getElementById('inline-msg'); if (el) el.style.display = 'none'; }
 
-function showZeroAnswerToast(questionName) {
+export function showZeroAnswerToast(questionName) {
   var toastEl = document.getElementById('zero-answer-toast');
   if (!toastEl) return;
   toastEl.innerHTML = '⚠ 0 Answers found for <strong>' + (questionName || 'this question') + '</strong>.<br>' +

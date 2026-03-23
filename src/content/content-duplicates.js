@@ -1,4 +1,6 @@
 // content-duplicates.js — Auto-detect duplicates, duplicate sidebar, image comparison
+import pixelmatch from './lib/pixelmatch.js';
+import { parseOnclickData, inferSubject } from './content-helpers.js';
 
 // ── IB Name parser ────────────────────────────────────────────────────────────
 
@@ -8,7 +10,7 @@
  * e.g.  PHYSI/22_HL_Winter_2023_Q1  →  { subject:'PHYSI', paper:'2', tz:'2', rest:'HL_Winter_2023_Q1' }
  * Returns null if name doesn't match the expected pattern.
  */
-function parseIBName(name) {
+export function parseIBName(name) {
   // Relaxed regex to handle slashes or dashes, and more flexible "rest" part
   var m = (name || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?(.+)$/i);
   if (!m) return null;
@@ -22,7 +24,7 @@ function parseIBName(name) {
  * Loads images at native resolution. Does NOT set crossOrigin (same-origin CDN).
  * Uses willReadFrequently:true to suppress the console warning.
  */
-function compareAllImages(imgs1, imgs2) {
+export function compareAllImages(imgs1, imgs2) {
   if (!imgs1 || !imgs2 || imgs1.length === 0 || imgs2.length === 0) return Promise.resolve(0);
   
   // Rule 1: Different number of images = different questions
@@ -100,7 +102,7 @@ function compareAllImages(imgs1, imgs2) {
 
 var _autoDupRunning = false;
 
-function autoFindDuplicates() {
+export function autoFindDuplicates() {
   if (_autoDupRunning) return;
   _autoDupRunning = true;
 
@@ -235,7 +237,7 @@ function autoFindDuplicates() {
 
 // ── Duplicate button (question panel navbar) ──────────────────────────────────
 
-function injectDupButton() {
+export function injectDupButton() {
   var navUl = document.querySelector('#question > div > div.row > div > ul');
   if (!navUl || document.getElementById('ib-dup-nav-item')) return;
 
@@ -275,7 +277,7 @@ function injectDupButton() {
   navUl.appendChild(dupNavItem);
 }
 
-function setupDupButtonObserver() {
+export function setupDupButtonObserver() {
   if (window._ibDupObserver) return;
   var observer = new MutationObserver(function() {
     if (!document.getElementById('ib-dup-nav-item')) injectDupButton();
@@ -291,7 +293,7 @@ var _iboGroup = { id: null, questions: [], primary: '', marked_by_user: true };
 var _iboAllEntries = [];  // filled once from background cache
 var _iboAllGroups  = [];  // filled once from background
 
-function ensureDupSidebar() {
+export function ensureDupSidebar() {
   if (document.getElementById('ib-dup-sidebar')) return;
   // Wait for #app > div.row
   function tryInsert() {
@@ -306,7 +308,7 @@ function ensureDupSidebar() {
   tryInsert();
 }
 
-function openDupSidebar(currentQName) {
+export function openDupSidebar(currentQName) {
   ensureDupSidebar();
 
   chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
@@ -345,7 +347,7 @@ function openDupSidebar(currentQName) {
   });
 }
 
-function closeDupSidebar() {
+export function closeDupSidebar() {
   var sidebar = document.getElementById('ib-dup-sidebar');
   var row = document.querySelector('#app > div.row');
   if (sidebar) sidebar.classList.remove('open');

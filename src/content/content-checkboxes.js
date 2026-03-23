@@ -1,11 +1,13 @@
 // content-checkboxes.js — Checkbox injection, done/fav toggling, duplicate marking
+import { ibSelectModeActive, ibCurrentTodoSet, injectToolbarButtons, updateTodoSelectionUI } from './content-todo.js';
+import { updateButtonStates, checkEmptyFocusState, parseOnclickData, inferSubject, getMcqAnswer } from './content-helpers.js';
 
 var IB_CHECKBOXES_INJECTED = false;
 
 var ibInjectionTimeout = null;
 var ibStateSyncInProgress = false;
 
-function injectDoneCheckboxes() {
+export function injectDoneCheckboxes() {
   var list = document.getElementById('questions-list1');
   if (!list) return;
 
@@ -79,7 +81,7 @@ function injectDoneCheckboxes() {
   }
 }
 
-function injectCheckboxIntoLi(li) {
+export function injectCheckboxIntoLi(li) {
   if (li.querySelector('.ib-done-btn')) return;
 
   var nameSpan = li.querySelector('span'); // Get the first span
@@ -184,7 +186,7 @@ function injectCheckboxIntoLi(li) {
   targetSpan.appendChild(checkbox);
 }
 
-function toggleDoneFromButton(btn, li, question_name) {
+export function toggleDoneFromButton(btn, li, question_name) {
   var isDone = li.classList.contains('done');
   // Send message to background to toggle
   chrome.runtime.sendMessage({
@@ -220,7 +222,7 @@ function toggleDoneFromButton(btn, li, question_name) {
   }
 }
 
-function toggleFavouriteFromButton(btn, li, question_name) {
+export function toggleFavouriteFromButton(btn, li, question_name) {
   var isFav = btn.classList.contains('is-fav');
   chrome.runtime.sendMessage({
     action: 'toggleFavouriteFromPage',
@@ -257,7 +259,7 @@ function toggleFavouriteFromButton(btn, li, question_name) {
 
 // ── Duplicate sidebar marking ─────────────────────────────────────────────────
 
-function markDupItems(list, dupInfo) {
+export function markDupItems(list, dupInfo) {
   if (!list || !dupInfo) return;
 
   // Ensure singleton tooltip element exists

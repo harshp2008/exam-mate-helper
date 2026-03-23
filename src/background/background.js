@@ -1,14 +1,8 @@
-// background.js — IB Exam Logger service worker
+import { CACHE_KEY, SETTINGS_KEY, KNOWN_SUBJECTS } from './constants.js';
+import { getSettings, fsReadAll, loadCache, saveCache, mergeEntries, loadDuplicates, loadRejectedGroups } from './background-api.js';
+import { setupMessageListeners } from './background-messages.js';
 
-var CACHE_KEY = 'ib_question_cache';
-var SETTINGS_KEY = 'ib_settings';
-var KNOWN_SUBJECTS = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
-
-try {
-  importScripts('./background-api.js', './background-messages.js');
-} catch (e) {
-  console.error('Failed to import scripts: ', e);
-}
+setupMessageListeners();
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +38,7 @@ async function autoSync() {
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('exam-mate.com')) {
-    setTimeout(function () { markTab(tabId); }, 800);
+    setTimeout(function () { markTab(tabId); }, 200);
   }
 });
 
@@ -58,9 +52,11 @@ async function markAllExamMateTabs() {
 }
 
 async function markTab(tabId) {
-  var entries = await loadCache();
-  var groups = await loadDuplicates();
-  var rejectedGroups = await loadRejectedGroups();
+  const [entries, groups, rejectedGroups] = await Promise.all([
+    loadCache(),
+    loadDuplicates(),
+    loadRejectedGroups()
+  ]);
   var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
   var allNames = entries.filter(function (e) { return e.logged_at !== null; }).map(function (e) { return e.question_name; });

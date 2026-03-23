@@ -1,13 +1,13 @@
 // popup-duplicates.js — Duplicate Question Modal for IB Exam Logger
-
-window.IB = window.IB || {};
+import { loadCache, loadDuplicates, saveCache } from './storage.js';
+import { renderDBPanel } from './popup-render.js';
 
 // Current pending group being edited
 window.IB._dupGroup = { id: null, questions: [], primary: '' };
 
 // ── Open / Close modal ────────────────────────────────────────────────────────
 
-window.IB.openDuplicateModal = function(currentQName) {
+export function openDuplicateModal(currentQName) {
   var modal = document.getElementById('dup-modal-overlay');
   if (!modal) return;
 
@@ -34,12 +34,16 @@ window.IB.openDuplicateModal = function(currentQName) {
 
   modal.classList.add('open');
   document.getElementById('dup-search-input').focus();
-};
+}
+window.openDuplicateModal = openDuplicateModal;
+window.IB.openDuplicateModal = openDuplicateModal;
 
-window.IB.closeDuplicateModal = function() {
+export function closeDuplicateModal() {
   var modal = document.getElementById('dup-modal-overlay');
   if (modal) modal.classList.remove('open');
-};
+}
+window.closeDuplicateModal = closeDuplicateModal;
+window.IB.closeDuplicateModal = closeDuplicateModal;
 
 // ── Render chips (current group members) ──────────────────────────────────────
 
@@ -138,7 +142,7 @@ function addToDupGroup(name) {
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 
-window.IB.saveDuplicateGroup = async function() {
+export async function saveDuplicateGroup() {
   var group = window.IB._dupGroup;
   var msgEl = document.getElementById('dup-modal-msg');
 
@@ -177,8 +181,8 @@ window.IB.saveDuplicateGroup = async function() {
     });
 
     // Reload local cache so repeated_question shows in panels
-    window.IB.allEntries = await window.IB.loadCache();
-    window.IB.duplicatesDB = await window.IB.loadDuplicates();
+    window.IB.allEntries = await loadCache();
+    window.IB.duplicatesDB = await loadDuplicates();
 
     showDupMsg('success', '✓ Saved! ' + group.questions.length + ' questions linked.');
     renderDupChips();
@@ -187,18 +191,20 @@ window.IB.saveDuplicateGroup = async function() {
     // Refresh open panels
     if (document.getElementById('panel-db') && document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
 
-    setTimeout(window.IB.closeDuplicateModal, 1500);
+    setTimeout(closeDuplicateModal, 1500);
   } catch(e) {
     showDupMsg('error', 'Error: ' + e.message);
   } finally {
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
   }
-};
+}
+window.saveDuplicateGroup = saveDuplicateGroup;
+window.IB.saveDuplicateGroup = saveDuplicateGroup;
 
 // ── Wire up events (called after DOM ready) ───────────────────────────────────
 
-window.IB.initDuplicateModal = function() {
+export function initDuplicateModal() {
   var searchInput = document.getElementById('dup-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', function() { runDupSearch(this.value); });
@@ -230,15 +236,17 @@ window.IB.initDuplicateModal = function() {
   }
 
   var saveBtn = document.getElementById('dup-save-btn');
-  if (saveBtn) saveBtn.addEventListener('click', window.IB.saveDuplicateGroup);
+  if (saveBtn) saveBtn.addEventListener('click', saveDuplicateGroup);
 
   var cancelBtn = document.getElementById('dup-cancel-btn');
-  if (cancelBtn) cancelBtn.addEventListener('click', window.IB.closeDuplicateModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeDuplicateModal);
 
   var overlay = document.getElementById('dup-modal-overlay');
   if (overlay) {
     overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) window.IB.closeDuplicateModal();
+      if (e.target === overlay) closeDuplicateModal();
     });
   }
-};
+}
+window.initDuplicateModal = initDuplicateModal;
+window.IB.initDuplicateModal = initDuplicateModal;

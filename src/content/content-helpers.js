@@ -1,6 +1,6 @@
 // content-helpers.js — Utility functions for IB Exam Logger content scripts
 
-function inferSubject(name) {
+export function inferSubject(name) {
   var upper = (name || '').toUpperCase();
   if (upper.includes('CHEMI')) return 'chemistry';
   if (upper.includes('PHYSI') || upper.includes('PHYS')) return 'physics';
@@ -9,7 +9,7 @@ function inferSubject(name) {
   return 'other';
 }
 
-function parseOnclickData(li) {
+export function parseOnclickData(li) {
   var elements = [li].concat(Array.from(li.querySelectorAll('*')));
   for (var i = 0; i < elements.length; i++) {
     var el = elements[i];
@@ -34,14 +34,14 @@ function parseOnclickData(li) {
   return null;
 }
 
-function getMcqAnswer(parsed) {
+export function getMcqAnswer(parsed) {
   var answerImgs = parsed ? (parsed.answer_images || []) : [];
   if (answerImgs.length > 0) return null;
   var el = document.getElementById('answer-text-1');
   return el ? el.textContent.trim() : null;
 }
 
-function updateButtonStates(doneNames, favNames) {
+export function updateButtonStates(doneNames, favNames) {
   var doneSet = new Set(doneNames || []);
   var favSet = new Set(favNames || []);
   document.querySelectorAll('.ib-done-btn').forEach(function (btn) {
@@ -58,7 +58,7 @@ function updateButtonStates(doneNames, favNames) {
   });
 }
 
-function checkEmptyFocusState() {
+export function checkEmptyFocusState() {
   var existingMsg = document.getElementById('ib-empty-focus-msg');
   if (existingMsg) existingMsg.remove();
 

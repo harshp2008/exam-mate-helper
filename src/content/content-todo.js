@@ -1,10 +1,10 @@
 // content-todo.js — To-Do queue toolbar, select mode, and focus mode
 
-var ibSelectModeActive = false;
-var ibCurrentTodoSet = new Set();
-var ibInitialTodoSet = new Set();
+export var ibSelectModeActive = false;
+export var ibCurrentTodoSet = new Set();
+export var ibInitialTodoSet = new Set();
 
-function injectToolbarButtons(list) {
+export function injectToolbarButtons(list) {
   var toolbarRow = document.querySelector('ul.sortable-header');
   if (toolbarRow && !document.getElementById('ib-todo-nav-item')) {
     // Permanently hide the filtered and page count badges (elements without nav-item usually)
@@ -157,7 +157,7 @@ function injectToolbarButtons(list) {
   }
 }
 
-function toggleSelectMode() {
+export function toggleSelectMode() {
   var list = document.getElementById('questions-list1');
   if (!list) return;
   ibSelectModeActive = !ibSelectModeActive;
@@ -219,7 +219,7 @@ function toggleSelectMode() {
   }
 }
 
-function updateTodoSelectionUI() {
+export function updateTodoSelectionUI() {
   if (!ibSelectModeActive) return;
   var list = document.getElementById('questions-list1');
   if (!list) return;
@@ -247,4 +247,9 @@ function updateTodoSelectionUI() {
   if (totalCountEl) {
     totalCountEl.textContent = ibCurrentTodoSet ? ibCurrentTodoSet.size : 0;
   }
+}
+
+export function resetTodoState() {
+  ibCurrentTodoSet = new Set();
+  ibInitialTodoSet = new Set();
 }

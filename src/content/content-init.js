@@ -1,7 +1,14 @@
 // content-init.js — Initialization and persistent observer for IB Exam Logger
+import { injectAllCSS } from './content-styles.js';
+import { showLoadingOverlay, removeLoadingOverlay } from './content-ui.js';
+import { injectDoneCheckboxes } from './content-checkboxes.js';
+import { autoFindDuplicates, injectDupButton, setupDupButtonObserver, ensureDupSidebar } from './content-duplicates.js';
+import { parseOnclickData } from './content-helpers.js';
+
+var ibInjectionTimeout = null;
 
 // Set up a persistent observer on the body to catch when #questions-list1 is replaced/updated
-function setupPersistentObserver() {
+export function setupPersistentObserver() {
   if (window._ibPersistentObserver) return;
   var observer = new MutationObserver(function(mutations) {
     var needsInjection = false;
@@ -36,7 +43,7 @@ function setupPersistentObserver() {
 
 // ── Init: run on page load ────────────────────────────────────────────────────
 
-(function init() {
+export function initContentScript() {
   injectAllCSS();
   // Show overlay immediately on page load — background will hide it once markDone arrives
   showLoadingOverlay('Syncing your progress...', 'Loading done questions from database');
@@ -100,4 +107,4 @@ function setupPersistentObserver() {
 
   // Ensure sidebar container exists in #app > div.row
   ensureDupSidebar();
-})();
+}

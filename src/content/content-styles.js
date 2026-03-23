@@ -5,7 +5,7 @@ var IB_STYLE_ID = 'ib-tagger-styles';
 
 // ── CSS: done marks + clean page styles ───────────────────────────────────────
 
-function injectAllCSS() {
+export function injectAllCSS() {
   if (document.getElementById(IB_STYLE_ID)) return;
   var style = document.createElement('style');
   style.id = IB_STYLE_ID;

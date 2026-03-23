@@ -194,3 +194,4 @@ function drawGrayPixel(img, i, alpha, output) {
     const val = 255 + (img[i] * 0.29889531 + img[i + 1] * 0.58662247 + img[i + 2] * 0.11448223 - 255) * alpha * img[i + 3] / 255;
     drawPixel(output, i, val, val, val);
 }
+export default pixelmatch;

@@ -1,19 +1,20 @@
 // background-api.js — Firebase and Storage helpers for service worker
+import { CACHE_KEY, SETTINGS_KEY, KNOWN_SUBJECTS } from './constants.js';
 
 // ── Firestore helpers ─────────────────────────────────────────────────────────
 
-function safeId(str) { return (str || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_'); }
-function subjectKey(s) { return (s || 'other').toLowerCase(); }
-function fsBase(settings) { return 'https://firestore.googleapis.com/v1/projects/' + settings.firebaseProjectId + '/databases/(default)/documents'; }
-function qDocUrl(settings, subject, qname) { return fsBase(settings) + '/subjects/' + subjectKey(subject) + '/PYQS/' + safeId(qname) + '?key=' + settings.firebaseApiKey; }
-function subjectDocUrl(settings, subject) { return fsBase(settings) + '/subjects/' + subjectKey(subject) + '?key=' + settings.firebaseApiKey; }
-function pyqsListUrl(settings, subject, pt) {
+export function safeId(str) { return (str || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_'); }
+export function subjectKey(s) { return (s || 'other').toLowerCase(); }
+export function fsBase(settings) { return 'https://firestore.googleapis.com/v1/projects/' + settings.firebaseProjectId + '/databases/(default)/documents'; }
+export function qDocUrl(settings, subject, qname) { return fsBase(settings) + '/subjects/' + subjectKey(subject) + '/PYQS/' + safeId(qname) + '?key=' + settings.firebaseApiKey; }
+export function subjectDocUrl(settings, subject) { return fsBase(settings) + '/subjects/' + subjectKey(subject) + '?key=' + settings.firebaseApiKey; }
+export function pyqsListUrl(settings, subject, pt) {
   var url = fsBase(settings) + '/subjects/' + subjectKey(subject) + '/PYQS?key=' + settings.firebaseApiKey + '&pageSize=300';
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 }
 
-function toFS(obj) {
+export function toFS(obj) {
   var fields = {};
   Object.keys(obj).forEach(function (k) {
     var v = obj[k];
@@ -27,7 +28,7 @@ function toFS(obj) {
   return { fields: fields };
 }
 
-function fromFS(doc) {
+export function fromFS(doc) {
   var obj = {}, fields = doc.fields || {};
   Object.keys(fields).forEach(function (k) {
     var f = fields[k];
@@ -42,31 +43,31 @@ function fromFS(doc) {
   return obj;
 }
 
-async function fsWrite(settings, entry) {
+export async function fsWrite(settings, entry) {
   await fetch(subjectDocUrl(settings, entry.subject), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { subject: { stringValue: subjectKey(entry.subject) } } }) });
   var r = await fetch(qDocUrl(settings, entry.subject, entry.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(entry)) });
   if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Write failed'); }
 }
 
-function dupGroupUrl(settings, groupId) {
+export function dupGroupUrl(settings, groupId) {
   return fsBase(settings) + '/duplicates/' + safeId(groupId) + '?key=' + settings.firebaseApiKey;
 }
-function dupListUrl(settings, pt) {
+export function dupListUrl(settings, pt) {
   var url = fsBase(settings) + '/duplicates?key=' + settings.firebaseApiKey + '&pageSize=300';
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 }
-async function fsWriteDupGroup(settings, group) {
+export async function fsWriteDupGroup(settings, group) {
   var r = await fetch(dupGroupUrl(settings, group.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(group)) });
   if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed'); }
 }
 
-async function fsDelete(settings, subject, qname) {
+export async function fsDelete(settings, subject, qname) {
   var r = await fetch(qDocUrl(settings, subject, qname), { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
 }
 
-async function fsReadAll(settings) {
+export async function fsReadAll(settings) {
   var results = [];
   for (var i = 0; i < KNOWN_SUBJECTS.length; i++) {
     var subj = KNOWN_SUBJECTS[i], pt = null;
@@ -83,29 +84,29 @@ async function fsReadAll(settings) {
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-async function loadCache() {
+export async function loadCache() {
   try { var s = await chrome.storage.local.get([CACHE_KEY]); return s[CACHE_KEY] || []; } catch (e) { return []; }
 }
-async function saveCache(entries) {
+export async function saveCache(entries) {
   try { await chrome.storage.local.set({ [CACHE_KEY]: entries }); } catch (e) { }
 }
-async function loadDuplicates() {
+export async function loadDuplicates() {
   try { var s = await chrome.storage.local.get(['ib_duplicates_cache']); return s['ib_duplicates_cache'] || []; } catch (e) { return []; }
 }
-async function saveDuplicates(groups) {
+export async function saveDuplicates(groups) {
   try { await chrome.storage.local.set({ ib_duplicates_cache: groups }); } catch (e) { }
 }
-async function loadRejectedGroups() {
+export async function loadRejectedGroups() {
   try { var s = await chrome.storage.local.get(['ib_rejected_duplicates']); return s['ib_rejected_duplicates'] || []; } catch (e) { return []; }
 }
-async function saveRejectedGroups(groups) {
+export async function saveRejectedGroups(groups) {
   try { await chrome.storage.local.set({ ib_rejected_duplicates: groups }); } catch (e) { }
 }
-async function getSettings() {
+export async function getSettings() {
   try { var s = await chrome.storage.local.get([SETTINGS_KEY]); return s[SETTINGS_KEY] || {}; } catch (e) { return {}; }
 }
 
-function mergeEntries(remote, local) {
+export function mergeEntries(remote, local) {
   var map = {};
   remote.forEach(function (e) { map[e.question_name] = e; });
   local.forEach(function (e) { if (!map[e.question_name]) map[e.question_name] = e; });

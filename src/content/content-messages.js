@@ -1,6 +1,13 @@
 // content-messages.js — Chrome message listener for IB Exam Logger content scripts
+import { openDupSidebar } from './content-duplicates.js';
+import { parseOnclickData, inferSubject, getMcqAnswer, updateButtonStates } from './content-helpers.js';
+import { injectAllCSS } from './content-styles.js';
+import { injectDoneCheckboxes, markDupItems } from './content-checkboxes.js';
+import { completeLoadingOverlay, showStatusToast } from './content-ui.js';
+import { updateTodoSelectionUI, ibCurrentTodoSet, ibInitialTodoSet, resetTodoState } from './content-todo.js';
 
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+export function setupContentMessageListeners() {
+  chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   // Popup Edit button: open sidebar for a specific group
   if (request.action === 'openDupSidebarForGroup') {
@@ -152,8 +159,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'resetTodoCheckboxes') {
     // Called when Today page clears the queue — reset all sidebar checkboxes + in-memory sets
-    ibCurrentTodoSet = new Set();
-    ibInitialTodoSet = new Set();
+    resetTodoState();
     var list = document.getElementById('questions-list1');
     if (list) {
       list.querySelectorAll('.ib-todo-checkbox').forEach(function(cb) { cb.checked = false; });
@@ -164,4 +170,5 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return true;
   }
 
-});
+  });
+}

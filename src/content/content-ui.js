@@ -2,7 +2,7 @@
 
 // ── Loading overlay ───────────────────────────────────────────────────────────
 
-function showLoadingOverlay(msg, sub) {
+export function showLoadingOverlay(msg, sub) {
   removeLoadingOverlay();
   var el = document.createElement('div');
   el.id = 'ib-loading-overlay';
@@ -22,7 +22,7 @@ function showLoadingOverlay(msg, sub) {
   el._interval = interval;
 }
 
-function completeLoadingOverlay() {
+export function completeLoadingOverlay() {
   var el = document.getElementById('ib-loading-overlay');
   if (!el) return;
   clearInterval(el._interval);
@@ -31,14 +31,14 @@ function completeLoadingOverlay() {
   setTimeout(removeLoadingOverlay, 400);
 }
 
-function removeLoadingOverlay() {
+export function removeLoadingOverlay() {
   var el = document.getElementById('ib-loading-overlay');
   if (el) { clearInterval(el._interval); el.remove(); }
 }
 
 // ── Toast Notifications ───────────────────────────────────────────────────────
 
-function showTodoToast(count) {
+export function showTodoToast(count) {
   var existing = document.getElementById('ib-todo-toast');
   if (existing) existing.remove();
   
@@ -64,7 +64,7 @@ function showTodoToast(count) {
   setTimeout(function() { if (toast.parentNode) toast.remove(); }, 5000);
 }
 
-function showStatusToast(mode) {
+export function showStatusToast(mode) {
   var existingToast = document.getElementById('ib-status-toast');
   if (existingToast) existingToast.remove();
 

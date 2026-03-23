@@ -1,8 +1,16 @@
 // background-messages.js — Message listener for service worker
+import { loadCache, saveCache, loadDuplicates, saveDuplicates, loadRejectedGroups, saveRejectedGroups, getSettings, fsWrite, fsDelete, fsReadAll, fsWriteDupGroup } from './background-api.js';
 
-// ── Message listener: toggleDoneFromPage + toggleFavouriteFromPage ────────────
+// Helper to bridge the gap if needing fsDeleteDupGroup which is missing from background-api
+async function fsDeleteDupGroup(settings, groupId) {
+  const { safeId, fsBase } = await import('./background-api.js');
+  var url = fsBase(settings) + '/duplicates/' + safeId(groupId) + '?key=' + settings.firebaseApiKey;
+  var r = await fetch(url, { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
+}
 
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+export function setupMessageListeners() {
+  chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'getTodoPages') {
     (async function() {
@@ -325,5 +333,6 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return true;
   }
 
-});
+  });
+}
 
