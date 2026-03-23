@@ -451,26 +451,44 @@ function iboRunSearch(query, resultsEl) {
   if (!query) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
 
   var inGroup = new Set(_iboGroup.questions);
-  var matches = _iboAllEntries.filter(function(e) {
-    return !inGroup.has(e.question_name) && (e.question_name || '').toLowerCase().includes(query);
-  }).slice(0, 10);
+  
+  // Harvest any question names currently visible in the main left sidebar
+  var pageNames = new Set();
+  document.querySelectorAll('#questions-list1 li[id^="qid-"]').forEach(function(li) {
+    var ns = li.querySelector('.ib-qname-text') || li.querySelector('span');
+    var name = ns ? (ns.getAttribute('data-realname') || ns.textContent.trim()) : '';
+    if (name) pageNames.add(name);
+  });
+
+  // Combine unique names from both sources
+  var combined = _iboAllEntries.map(function(e) { return { name: e.question_name, logged: true }; });
+  pageNames.forEach(function(pName) {
+    if (!combined.some(function(c) { return c.name === pName; })) {
+      combined.push({ name: pName, logged: false });
+    }
+  });
+
+  var matches = combined.filter(function(c) {
+    return !inGroup.has(c.name) && (c.name || '').toLowerCase().includes(query);
+  }).slice(0, 15);
 
   resultsEl.style.display = 'block';
   if (matches.length === 0) {
     resultsEl.innerHTML = '<div class="ibo-no-results">No results — use "Add manually" below.</div>';
     return;
   }
-  resultsEl.innerHTML = matches.map(function(e) {
-    var isDone = !!e.logged_at;
+  resultsEl.innerHTML = matches.map(function(m) {
+    var entry = _iboAllEntries.find(function(e) { return e.question_name === m.name; });
+    var isDone = entry ? !!entry.logged_at : false;
     // Check if already in another group
     var inOtherGroup = _iboAllGroups.some(function(g) {
-      return g.id !== _iboGroup.id && g.questions && g.questions.indexOf(e.question_name) !== -1;
+      return g.id !== _iboGroup.id && g.questions && g.questions.indexOf(m.name) !== -1;
     });
     var badge = inOtherGroup
       ? '<span class="ibo-badge pending">in other group</span>'
-      : (isDone ? '<span class="ibo-badge done">\u2713 done</span>' : '<span class="ibo-badge pending">pending</span>');
-    return '<div class="ibo-result' + (inOtherGroup ? ' ibo-result-conflict' : '') + '" data-name="' + e.question_name + '" data-conflict="' + (inOtherGroup ? '1' : '0') + '">' +
-      '<span style="overflow:hidden;text-overflow:ellipsis;">' + e.question_name + '</span>' + badge +
+      : (isDone ? '<span class="ibo-badge done">\u2713 done</span>' : '<span class="ibo-badge pending">' + (m.logged ? 'logged' : 'on page') + '</span>');
+    return '<div class="ibo-result' + (inOtherGroup ? ' ibo-result-conflict' : '') + '" data-name="' + m.name + '" data-conflict="' + (inOtherGroup ? '1' : '0') + '">' +
+      '<span style="overflow:hidden;text-overflow:ellipsis;">' + m.name + '</span>' + badge +
       '</div>';
   }).join('');
   resultsEl.querySelectorAll('.ibo-result').forEach(function(item) {
