@@ -16,7 +16,7 @@
     "https://openrouter.ai/*"
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -29,9 +29,14 @@
         "https://www.exam-mate.com/topicalpastpapers*"
       ],
       "js": [
-        "content-styles.js",
-        "content-ui.js",
-        "content.js"
+        "src/content/content-styles.js",
+        "src/content/content-ui.js",
+        "src/content/content-helpers.js",
+        "src/content/content-todo.js",
+        "src/content/content-checkboxes.js",
+        "src/content/content-duplicates.js",
+        "src/content/content-messages.js",
+        "src/content/content-init.js"
       ]
     }
   ],
@@ -41,6 +46,6 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background.js"
   }
 }

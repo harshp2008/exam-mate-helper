@@ -5,7 +5,7 @@ var SETTINGS_KEY = 'ib_settings';
 var KNOWN_SUBJECTS = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
 
 try {
-  importScripts('background-api.js', 'background-messages.js');
+  importScripts('./background-api.js', './background-messages.js');
 } catch (e) {
   console.error('Failed to import scripts: ', e);
 }

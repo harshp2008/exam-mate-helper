@@ -230,6 +230,20 @@ function injectAllCSS() {
     '.ib-dup-tooltip-name::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #185FA5; flex-shrink: 0; }',
     '.ib-dup-tooltip-name.other::before { background: #bbb; }',
 
+    // new styles to fix layout issues in repsonse to the duplicate sidebar breaking everything (made by human)
+
+    'div.p-0.card.card-body, div.ibo-inner {max-height: 600px; overflow: hidden;}',
+    '#app > div.row > div.col-xl-3.col-lg-4.pe-lg-0 > div > div.question-list  {display: flex; flex-direction: column; overflow: hidden;}',
+    '#app > div.row {padding: 0; margin: 0; display: flex; flex-direction: row; height: 600px;}',
+    '#ib-dup-sidebar { padding: 0px; border-radius: 15px; border: 2px solid #9cb6d8; margin-left: 7px;}',
+    'div.open {height: 100% !important;}',
+    'div.row.ib-dup-open {display: flex; flex-direction: row; width: 100%;}',
+    '#app > div.row.ib-dup-open > div.col-xl-9.col-lg-8.ps-lg-1 {flex-grow: 1;}',
+    'div.content-page {padding-bottom: 4px; padding-top: 5px;}',
+    '#ib-dup-sidebar {height: 100% !important;}'
+
+
+
   ].join('\n');
   document.head.appendChild(style);
 }
