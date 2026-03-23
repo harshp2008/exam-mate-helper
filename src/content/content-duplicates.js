@@ -217,6 +217,17 @@ function injectDupButton() {
   dupNavItem.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Remove focus to prevent stay-grey bug
+    if (e.currentTarget && e.currentTarget.blur) e.currentTarget.blur();
+    var link = e.currentTarget.querySelector('a');
+    if (link && link.blur) link.blur();
+    var sidebar = document.getElementById('ib-dup-sidebar');
+    if (sidebar && sidebar.classList.contains('open')) {
+      closeDupSidebar();
+      return;
+    }
+
     var list = document.getElementById('questions-list1');
     var currentQ = '';
     if (list) {

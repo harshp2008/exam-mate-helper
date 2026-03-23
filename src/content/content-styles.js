@@ -155,14 +155,15 @@ function injectAllCSS() {
     // Make the row a non-wrapping flex row so sidebar sits beside the columns
     '#app > div.row { flex-wrap: nowrap !important; align-items: stretch !important; }',
     '#ib-dup-sidebar {',
+    '  display: none;',
     '  width: 0; min-width: 0; max-width: 0; overflow: hidden; flex-shrink: 0; flex-grow: 0;',
     '  transition: width 0.25s ease, min-width 0.25s ease, max-width 0.25s ease;',
     '  background: #fff; border-left: 2px solid #dce8f5;',
-    '  display: flex; flex-direction: column;',
+    '  flex-direction: column;',
     '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;',
     '  height: 80vh; box-sizing: border-box;',
     '}',
-    '#ib-dup-sidebar.open { width: 340px; min-width: 340px; max-width: 340px; overflow-y: auto; }',
+    '#ib-dup-sidebar.open { display: flex; width: 340px; min-width: 340px; max-width: 340px; overflow-y: auto; }',
     '/* Two-column widths with sidebar closed (default — already set elsewhere) */',
     '/* Shrink question-view panel when sidebar is open */',
     '#app > div.row.ib-dup-open div.col-xl-9.col-lg-8.ps-lg-1 {',
@@ -240,7 +241,9 @@ function injectAllCSS() {
     'div.row.ib-dup-open {display: flex; flex-direction: row; width: 100%;}',
     '#app > div.row.ib-dup-open > div.col-xl-9.col-lg-8.ps-lg-1 {flex-grow: 1;}',
     'div.content-page {padding-bottom: 4px; padding-top: 5px;}',
-    '#ib-dup-sidebar {height: 100% !important;}'
+    '#ib-dup-sidebar {height: 100% !important;}',
+    '#app > div.row > div.col-xl-9.col-lg-8.ps-lg-1 {flex-grow: 1;}',
+    '#ib-dup-nav-item a.nav-link:focus, #ib-dup-nav-item a.nav-link:active { background-color: transparent !important; outline: none !important; box-shadow: none !important; }'
 
 
 
