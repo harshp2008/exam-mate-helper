@@ -5,13 +5,14 @@ Declutters the ExamMate UI and gives you the tools to track every question you'v
 
 ---
 
-## 🔥 Recent Updates
+## 🔥 Recent Updates (March 2026)
 
-- **MCQ Text Answer Retrieval**: Automatically detects and displays text-based answers (e.g., "B") whenever a question is missing image-based answers.  
-- **Improved 0-Answer Handling**: For questions where no answer (image or text) is found, the extension shows a bright red **0A** indicator and triggers a toast notification with a GitHub issue link to report the missing data.
-- **Focus Mode Enhancement**: Automatically selects the first un-attempted to-do item in your list when entering Focus Mode.
-- **Improved UI Persistence**: Custom buttons (Done, Favourite, Checkbox) and status indicators now stay correctly synced and visible even after using the **Search** or **Random** features.
-- **Reliability & UI Improvements**: Significant bug fixes and overall app reliability improvements, including UI consistency and visual polish.
+- **Advanced Duplicate Detection**: Integrated the `pixelmatch` library for professional image-based comparison. It now detects duplicate questions with 90%+ pixel accuracy, even across different timezones or papers.
+- **Smart Blacklist System**: If you delete or reject an AI-detected duplicate group, the extension now remembers your choice and will never automatically re-suggest that group again.
+- **Sidebar Search Harvest**: The search box in the Duplicates sidebar now scans both your logged questions *and* questions currently visible on the ExamMate page.
+- **Modular Refactor**: The entire codebase has been reorganized into a clean, modular `src/` directory structure for better performance and maintainability.
+- **Instant UI Refreshes**: Resolved race conditions in background message processing, ensuring the extension popup and sidebar update immediately after actions.
+- **MCQ Text Answer Retrieval**: Automatically detects and displays text-based answers (e.g., "B") whenever image-based answers are missing.
 
 ---
 
@@ -61,6 +62,16 @@ Never lose your progress:
 
 - Sync your "Done" status and Favourites across all your devices.
 - High-performance Firestore integration with verified connectivity testing.
+
+### 🔗 Advanced Duplicate Detection (Beta)
+
+Tired of seeing the same question multiple times across different timezones or papers?
+
+- **Pixelmatch Engine**: Uses high-precision pixel comparison to identify identical diagrams and text.
+- **Smart Grouping**: Automatically identifies candidate groups on the current page for review.
+- **Search Everywhere**: Search for duplicates across your entire logged database plus current page sidebar items.
+- **Rejection Blacklist**: If you delete an AI-detected group, the extension remembers it and won't bug you about it again.
+- **Primary Marker**: Designate a "Primary" version of a question to keep your data clean and organized.
 
 ---
 
