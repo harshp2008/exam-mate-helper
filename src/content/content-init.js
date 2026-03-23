@@ -47,6 +47,12 @@ function setupPersistentObserver() {
       injectDoneCheckboxes();
       setupPersistentObserver();
       
+      // Trigger auto-duplicate detection exactly once per page load
+      if (typeof autoFindDuplicates === 'function' && !window._ibAutoDupTriggered) {
+        window._ibAutoDupTriggered = true;
+        setTimeout(autoFindDuplicates, 2500);
+      }
+      
       var focusQ = new URLSearchParams(window.location.search).get('ib_focus');
       if (focusQ) {
         setTimeout(function() {

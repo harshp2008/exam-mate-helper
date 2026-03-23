@@ -1,4 +1,5 @@
 // content-styles.js — Injects CSS for IB Exam Logger
+window.IB = window.IB || {};
 
 var IB_STYLE_ID = 'ib-tagger-styles';
 

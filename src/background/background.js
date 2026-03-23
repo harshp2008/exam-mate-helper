@@ -44,7 +44,7 @@ async function autoSync() {
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('exam-mate.com')) {
-    setTimeout(function () { markTab(tabId); }, 1500);
+    setTimeout(function () { markTab(tabId); }, 800);
   }
 });
 

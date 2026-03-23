@@ -51,9 +51,7 @@ function injectDoneCheckboxes() {
         }
         
         if (typeof checkEmptyFocusState === 'function') checkEmptyFocusState();
-
-        // Auto-detect duplicates (delayed slightly so page images have time to register in cache)
-        setTimeout(autoFindDuplicates, 2000);
+        // Removed: autoFindDuplicates call moved to content-init.js (one-time trigger)
       }
     });
   }
