@@ -146,8 +146,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       });
 
       await saveCache(entries);
+      sendResponse({ ok: true });
     })();
-    sendResponse({ ok: true });
     return true;
   }
 
@@ -184,8 +184,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           try { await fsWrite(settings, entry); } catch (e) { }
         }
       }
+      sendResponse({ ok: true });
     })();
-    sendResponse({ ok: true });
     return true;
   }
 
@@ -221,8 +221,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           try { await fsWrite(settings, entry); } catch (e) { }
         }
       }
+      sendResponse({ ok: true });
     })();
-    sendResponse({ ok: true });
     return true;
   }
 
@@ -262,8 +262,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           if (ex) fsWrite(settings, ex).catch(function() {});
         });
       }
+      sendResponse({ ok: true });
     })();
-    sendResponse({ ok: true });
     return true;
   }
 
@@ -307,8 +307,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           if (ex) fsWrite(settings, ex).catch(function() {});
         });
       }
+      sendResponse({ ok: true });
     })();
-    sendResponse({ ok: true });
     return true;
   }
 
