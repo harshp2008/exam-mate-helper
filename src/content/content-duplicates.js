@@ -162,6 +162,12 @@ function autoFindDuplicates() {
     Object.keys(buckets).forEach(function(key) {
       var bucket = buckets[key];
       if (bucket.length < 2) return;
+      // Rule: If strictly rejected by user before, skip
+      var rejKey = bucket.map(function(b) { return b.entry.question_name; }).sort().join('|');
+      if (window.IB.rejectedGroups && window.IB.rejectedGroups.indexOf(rejKey) !== -1) {
+        return;
+      }
+
       // Check if ALL are already in the same existing group
       var names = bucket.map(function(b) { return b.entry.question_name; });
       var allGroupedTogether = existingGroups.some(function(g) {

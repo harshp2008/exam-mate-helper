@@ -60,6 +60,7 @@ async function markAllExamMateTabs() {
 async function markTab(tabId) {
   var entries = await loadCache();
   var groups = await loadDuplicates();
+  var rejectedGroups = await loadRejectedGroups();
   var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
   var allNames = entries.filter(function (e) { return e.logged_at !== null; }).map(function (e) { return e.question_name; });
@@ -78,7 +79,8 @@ async function markTab(tabId) {
       questionNames: allNames,
       favouriteNames: favNames,
       todoNames: todoNames,
-      dupInfo: dupInfo
+      dupInfo: dupInfo,
+      rejectedGroups: rejectedGroups
     });
   } catch (e) { }
 }

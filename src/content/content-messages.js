@@ -90,6 +90,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         if (name) li.classList.toggle('ib-todo', todoSet.has(name));
       });
       updateButtonStates(request.questionNames || [], request.favouriteNames || []);
+      
+      // Store rejected groups to prevent AI re-detection
+      if (request.rejectedGroups) window.IB.rejectedGroups = request.rejectedGroups;
+      
       if (request.dupInfo) markDupItems(list, request.dupInfo);
     }
     completeLoadingOverlay(); // ← hides overlay once sync is done

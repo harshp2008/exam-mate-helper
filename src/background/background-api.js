@@ -95,6 +95,12 @@ async function loadDuplicates() {
 async function saveDuplicates(groups) {
   try { await chrome.storage.local.set({ ib_duplicates_cache: groups }); } catch (e) { }
 }
+async function loadRejectedGroups() {
+  try { var s = await chrome.storage.local.get(['ib_rejected_duplicates']); return s['ib_rejected_duplicates'] || []; } catch (e) { return []; }
+}
+async function saveRejectedGroups(groups) {
+  try { await chrome.storage.local.set({ ib_rejected_duplicates: groups }); } catch (e) { }
+}
 async function getSettings() {
   try { var s = await chrome.storage.local.get([SETTINGS_KEY]); return s[SETTINGS_KEY] || {}; } catch (e) { return {}; }
 }

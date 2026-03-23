@@ -69,7 +69,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           };
         });
       });
-      sendResponse({ questionNames: doneNames, favouriteNames: favNames, todoNames: todoNames, dupInfo: dupInfo });
+      var rejectedGroups = await loadRejectedGroups();
+      sendResponse({ questionNames: doneNames, favouriteNames: favNames, todoNames: todoNames, dupInfo: dupInfo, rejectedGroups: rejectedGroups });
     })();
     return true;
   }
@@ -103,7 +104,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     (async function() {
       var entries = await loadCache();
       var groups = await loadDuplicates();
-      sendResponse({ entries: entries, groups: groups });
+      var rejectedGroups = await loadRejectedGroups();
+      sendResponse({ entries: entries, groups: groups, rejectedGroups: rejectedGroups });
     })();
     return true;
   }
@@ -297,6 +299,17 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       // Remove group from DB
       groups = groups.filter(function(g) { return g.id !== groupId; });
       await saveDuplicates(groups);
+
+      // Add to rejected groups list to prevent AI re-detection
+      if (group.questions && group.questions.length > 0) {
+        var rejected = await loadRejectedGroups();
+        // Store as a sorted string for easy comparison
+        var rejKey = group.questions.slice().sort().join('|');
+        if (rejected.indexOf(rejKey) === -1) {
+          rejected.push(rejKey);
+          await saveRejectedGroups(rejected);
+        }
+      }
 
       if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
         // Delete dup group doc from Firestore if supported
