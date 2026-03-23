@@ -59,16 +59,26 @@ async function markAllExamMateTabs() {
 
 async function markTab(tabId) {
   var entries = await loadCache();
+  var groups = await loadDuplicates();
   var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
   var allNames = entries.filter(function (e) { return e.logged_at !== null; }).map(function (e) { return e.question_name; });
   var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
+  // Build dupInfo: name -> { is_primary, linked_questions, primary_name }
+  var dupInfo = {};
+  groups.forEach(function(g) {
+    var qList = g.questions || [];
+    qList.forEach(function(name) {
+      dupInfo[name] = { is_primary: name === g.primary, linked_questions: qList.filter(function(n) { return n !== name; }), primary_name: g.primary || qList[0] || '' };
+    });
+  });
   try {
     await chrome.tabs.sendMessage(tabId, {
       action: 'markDone',
       questionNames: allNames,
       favouriteNames: favNames,
-      todoNames: todoNames
+      todoNames: todoNames,
+      dupInfo: dupInfo
     });
   } catch (e) { }
 }

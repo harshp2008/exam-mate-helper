@@ -51,11 +51,25 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'requestSyncState') {
     (async function() {
       var entries = await loadCache();
+      var groups = await loadDuplicates();
       var today = new Date().toISOString().split('T')[0];
       var doneNames = entries.filter(function(e) { return e.logged_at !== null; }).map(function(e) { return e.question_name; });
       var favNames = entries.filter(function(e) { return e.is_favourite; }).map(function(e) { return e.question_name; });
       var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
-      sendResponse({ questionNames: doneNames, favouriteNames: favNames, todoNames: todoNames });
+      var dupInfo = {};
+      groups.forEach(function(g) {
+        var qList = g.questions || [];
+        var markedByUser = g.marked_by_user !== false;
+        qList.forEach(function(name) {
+          dupInfo[name] = {
+            is_primary: name === g.primary,
+            linked_questions: qList.filter(function(n) { return n !== name; }),
+            primary_name: g.primary || qList[0] || '',
+            marked_by_user: markedByUser
+          };
+        });
+      });
+      sendResponse({ questionNames: doneNames, favouriteNames: favNames, todoNames: todoNames, dupInfo: dupInfo });
     })();
     return true;
   }
@@ -69,6 +83,28 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       }).catch(function() {});
     }
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'openDuplicateModal') {
+    var qname = request.questionName || '';
+    if (chrome.action && chrome.action.openPopup) {
+      chrome.action.openPopup().then(function() {
+        setTimeout(function() {
+          chrome.runtime.sendMessage({ action: 'openDuplicateModalInPopup', questionName: qname });
+        }, 200);
+      }).catch(function() {});
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'getDupData') {
+    (async function() {
+      var entries = await loadCache();
+      var groups = await loadDuplicates();
+      sendResponse({ entries: entries, groups: groups });
+    })();
     return true;
   }
 
@@ -190,4 +226,91 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return true;
   }
 
+  if (request.action === 'saveDuplicateGroup') {
+    (async function() {
+      var settings = await getSettings();
+      var entries = await loadCache();
+      var group = request.group; // { id, questions: [], primary: "...", marked_by_user: bool }
+      var allNames = group.questions || [];
+      var primary = group.primary || allNames[0] || '';
+      var markedByUser = (group.marked_by_user !== false); // default true
+
+      allNames.forEach(function(name) {
+        var others = allNames.filter(function(n) { return n !== name; });
+        var rq = { is_primary: name === primary, linked_questions: others, marked_by_user: markedByUser };
+        var ex = entries.find(function(e) { return e.question_name === name; });
+        if (ex) {
+          ex.repeated_question = rq;
+        } else {
+          var u = name.toUpperCase();
+          var subj = u.includes('CHEMI') ? 'chemistry' : u.includes('PHYSI') || u.includes('PHYS') ? 'physics' : u.includes('MATH') ? 'mathematics' : u.includes('BIOL') || u.includes('BIO') ? 'biology' : 'other';
+          entries.unshift({ question_name: name, subject: subj, question_imgs: [], answer_imgs: [], old_topics: '', is_favourite: false, logged_at: null, todo_date: null, repeated_question: rq });
+        }
+      });
+
+      await saveCache(entries);
+
+      var groups = await loadDuplicates();
+      var idx = groups.findIndex(function(g) { return g.id === group.id; });
+      if (idx !== -1) groups[idx] = group; else groups.push(group);
+      await saveDuplicates(groups);
+
+      if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
+        try { await fsWriteDupGroup(settings, group); } catch(e) {}
+        allNames.forEach(function(name) {
+          var ex = entries.find(function(e) { return e.question_name === name; });
+          if (ex) fsWrite(settings, ex).catch(function() {});
+        });
+      }
+    })();
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'removeDuplicateGroup') {
+    (async function() {
+      var settings = await getSettings();
+      var entries = await loadCache();
+      var groups = await loadDuplicates();
+      var groupId = request.groupId;
+
+      // Find the group
+      var group = groups.find(function(g) { return g.id === groupId; });
+      if (!group) { sendResponse({ ok: true }); return; }
+
+      var affectedNames = group.questions || [];
+
+      // Strip repeated_question from all affected entries
+      affectedNames.forEach(function(name) {
+        var ex = entries.find(function(e) { return e.question_name === name; });
+        if (ex) {
+          delete ex.repeated_question;
+          // If the entry has no other state (not logged, not fav, no todo), remove it entirely
+          if (!ex.logged_at && !ex.is_favourite && !ex.todo_date) {
+            entries = entries.filter(function(e) { return e.question_name !== name; });
+          }
+        }
+      });
+
+      await saveCache(entries);
+
+      // Remove group from DB
+      groups = groups.filter(function(g) { return g.id !== groupId; });
+      await saveDuplicates(groups);
+
+      if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
+        // Delete dup group doc from Firestore if supported
+        try { await fsDeleteDupGroup(settings, groupId); } catch(e) {}
+        // Re-write affected entries to remove repeated_question
+        affectedNames.forEach(function(name) {
+          var ex = entries.find(function(e) { return e.question_name === name; });
+          if (ex) fsWrite(settings, ex).catch(function() {});
+        });
+      }
+    })();
+    sendResponse({ ok: true });
+    return true;
+  }
+
 });
+

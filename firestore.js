@@ -49,6 +49,12 @@ window.IB.pyqsListUrl = function(subject, pt) {
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 };
+window.IB.dupGroupUrl = function(groupId) { return window.IB.fsBase() + '/duplicates/' + window.IB.safeId(groupId) + '?key=' + window.IB.appSettings.firebaseApiKey; };
+window.IB.dupListUrl = function(pt) {
+  var url = window.IB.fsBase() + '/duplicates?key=' + window.IB.appSettings.firebaseApiKey + '&pageSize=300';
+  if (pt) url += '&pageToken=' + encodeURIComponent(pt);
+  return url;
+};
 
 // ── Firestore converters ──────────────────────────────────────────────────────
 
@@ -60,6 +66,7 @@ window.IB.toFS = function(obj) {
     else if (typeof v === 'boolean')    fields[k] = { booleanValue: v };
     else if (typeof v === 'number')     fields[k] = { integerValue: String(v) };
     else if (Array.isArray(v))          fields[k] = { arrayValue: { values: v.map(function(x) { return { stringValue: String(x) }; }) } };
+    else if (typeof v === 'object')     fields[k] = { mapValue: window.IB.toFS(v) };
     else                                fields[k] = { stringValue: String(v) };
   });
   return { fields: fields };
@@ -74,6 +81,7 @@ window.IB.fromFS = function(doc) {
     else if (f.booleanValue !== undefined) obj[k] = f.booleanValue;
     else if (f.nullValue !== undefined)    obj[k] = null;
     else if (f.arrayValue !== undefined)   obj[k] = (f.arrayValue.values || []).map(function(v) { return v.stringValue !== undefined ? v.stringValue : String(Object.values(v)[0]); });
+    else if (f.mapValue !== undefined)     obj[k] = window.IB.fromFS(f.mapValue);
     else obj[k] = null;
   });
   return obj;
@@ -85,6 +93,23 @@ window.IB.fsWrite = async function(entry) {
   await fetch(window.IB.subjectDocUrl(entry.subject), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { subject: { stringValue: window.IB.subjectKey(entry.subject) } } }) });
   var r = await fetch(window.IB.qDocUrl(entry.subject, entry.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(window.IB.toFS(entry)) });
   if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Write failed (' + r.status + ')'); }
+};
+
+window.IB.fsWriteDupGroup = async function(group) {
+  var r = await fetch(window.IB.dupGroupUrl(group.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(window.IB.toFS(group)) });
+  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed (' + r.status + ')'); }
+};
+
+window.IB.fsReadAllDupGroups = async function() {
+  var results = [], pt = null;
+  do {
+    var r = await fetch(window.IB.dupListUrl(pt));
+    if (!r.ok) { if (r.status === 404) break; var e = await r.json(); throw new Error('Read failed: ' + (e.error && e.error.message ? e.error.message : r.status)); }
+    var d = await r.json();
+    if (d.documents) d.documents.forEach(function(doc) { results.push(window.IB.fromFS(doc)); });
+    pt = d.nextPageToken || null;
+  } while (pt);
+  return results;
 };
 
 window.IB.fsDelete = async function(subject, qname) {

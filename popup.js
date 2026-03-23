@@ -6,6 +6,7 @@ window.IB.currentData = null;
 window.IB.allEntries = [];
 window.IB.sidebarQuestions = [];
 window.IB.appSettings = {};
+window.IB.duplicatesDB = [];
 window.IB.credentialsValid = false; // tracks whether Firebase credentials passed validation
 window.IB.previousView = ''; // Tracks the previously active view
 
@@ -34,6 +35,17 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('btn-favourites-view').addEventListener('click', function () { switchView('favourites'); });
   document.getElementById('btn-db-view').addEventListener('click', function () { switchView('db'); });
   document.getElementById('btn-settings-view').addEventListener('click', function () { switchView('settings'); });
+  document.getElementById('btn-dups-view').addEventListener('click', function () { switchView('dups'); });
+  document.getElementById('dup-modal-close-btn').addEventListener('click', window.IB.closeDuplicateModal);
+
+  // Trigger new group modal from Dups panel toolbar
+  document.getElementById('dups-new-btn').addEventListener('click', function () {
+    var currentQ = window.IB.currentData ? window.IB.currentData.question_name : '';
+    window.IB.openDuplicateModal(currentQ);
+  });
+
+  // Init duplicate modal event wiring
+  window.IB.initDuplicateModal();
 
   // Log panel
   document.getElementById('log-btn').addEventListener('click', logCurrent);
@@ -60,6 +72,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   // Load cache, update sync btn state, populate settings
   window.IB.allEntries = await window.IB.loadCache();
+  window.IB.duplicatesDB = await window.IB.loadDuplicates();
   updateSyncBtnState();
   populateSettingsUI();
 
@@ -108,6 +121,10 @@ document.addEventListener('DOMContentLoaded', async function () {
 chrome.runtime.onMessage.addListener(function(request) {
   if (request.action === 'switchToToday') {
     switchView('today');
+  }
+  if (request.action === 'openDuplicateModal' || request.action === 'openDuplicateModalInPopup') {
+    var currentQ = window.IB.currentData ? window.IB.currentData.question_name : (request.questionName || '');
+    window.IB.openDuplicateModal(currentQ);
   }
 });
 

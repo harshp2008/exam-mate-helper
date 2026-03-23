@@ -7,7 +7,7 @@ function switchView(view) {
     showStatusToast();
   }
 
-  ['log', 'today', 'favourites', 'db', 'settings'].forEach(function (v) {
+  ['log', 'today', 'favourites', 'db', 'dups', 'settings'].forEach(function (v) {
     var p = document.getElementById('panel-' + v);
     if (p) p.classList.toggle('active', v === view);
     var btn = document.getElementById('btn-' + v + '-view');
@@ -16,6 +16,7 @@ function switchView(view) {
   if (view === 'today') renderTodayPanel();
   if (view === 'db') renderDBPanel();
   if (view === 'favourites') renderFavouritesPanel();
+  if (view === 'dups') renderDupsPanel();
   if (view === 'settings') populateSettingsUI();
   if (view === 'log' && window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
 
@@ -337,19 +338,103 @@ function showFavMsg(type, text) {
   setTimeout(function () { el.style.display = 'none'; }, 3000);
 }
 
-// ── DB panel ──────────────────────────────────────────────────────────────────
+// ── Dups panel ────────────────────────────────────────────────────────────────
+
+function renderDupsPanel() {
+  var groups = window.IB.duplicatesDB || [];
+  var countEl = document.getElementById('dups-count');
+  var listEl = document.getElementById('dup-group-list');
+  if (!listEl) return;
+
+  if (countEl) countEl.textContent = groups.length + ' group' + (groups.length !== 1 ? 's' : '');
+
+  if (groups.length === 0) {
+    listEl.innerHTML = '<div class="empty-dups">\uD83D\uDD17 No duplicate groups yet.<br>Click "+ New Group" to mark questions as duplicates.</div>';
+    return;
+  }
+
+  listEl.innerHTML = groups.map(function(g, gi) {
+    var qList = g.questions || [];
+    var primary = g.primary || qList[0] || '—';
+    var others = qList.filter(function(n) { return n !== primary; });
+    var byUser = g.marked_by_user !== false;
+    var srcBadge = byUser
+      ? '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#E1F5EE;color:#0F6E56;margin-left:6px;font-weight:600;">\u270F\uFE0F User</span>'
+      : '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#EDE7F6;color:#512DA8;margin-left:6px;font-weight:600;">\uD83E\uDD16 AI</span>';
+    return '<div class="dup-group-card" data-gidx="' + gi + '" data-gid="' + (g.id || '') + '">' +
+      '<div class="dup-group-card-header">' +
+        '<span class="dup-group-primary-label">\u2605 Primary' + srcBadge + '</span>' +
+        '<div style="display:flex;gap:5px;">' +
+          '<button class="dup-group-edit-btn" data-gidx="' + gi + '">Edit</button>' +
+          '<button class="dup-group-del-btn" data-gid="' + (g.id || '') + '" title="Remove duplicate group" style="background:none;border:1px solid #f5c6c6;border-radius:5px;color:#A32D2D;cursor:pointer;padding:2px 7px;font-size:11px;">\uD83D\uDDD1</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="dup-group-primary-name">' + primary + '</div>' +
+      (others.length > 0 ?
+        '<div class="dup-group-others">' +
+          '<div class="dup-group-other-label">Other duplicates</div>' +
+          others.map(function(n) { return '<div class="dup-group-other-name">' + n + '</div>'; }).join('') +
+        '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  listEl.querySelectorAll('.dup-group-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var idx = parseInt(this.getAttribute('data-gidx'), 10);
+      var g = (window.IB.duplicatesDB || [])[idx];
+      if (!g) return;
+      // Notify the page's content script to open the sidebar with this group
+      // (Inject via background message or direct tab message)
+      chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        if (!tabs || !tabs[0]) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'openDupSidebarForGroup', groupId: g.id });
+      });
+    });
+  });
+
+  listEl.querySelectorAll('.dup-group-del-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var gid = this.getAttribute('data-gid');
+      if (!gid) return;
+      if (!confirm('Remove this duplicate group? All questions will lose their duplicate status.')) return;
+      chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: gid }, function() {
+        // Refresh the dups panel
+        chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
+          if (res && res.groups) {
+            window.IB.duplicatesDB = res.groups;
+            renderDupsPanel();
+          }
+        });
+      });
+    });
+  });
+}
+
 
 function renderDBPanel() {
-  var subjects = new Set(window.IB.allEntries.map(function (e) { return e.subject; }));
-  document.getElementById('stat-total').textContent = window.IB.allEntries.length;
+  // Non-primary duplicates are excluded from all counts and the list
+  function isNonPrimaryDup(e) {
+    return e.repeated_question && e.repeated_question.is_primary === false;
+  }
+  var visibleEntries = window.IB.allEntries.filter(function(e) { return !isNonPrimaryDup(e); });
+  var completedEntries = visibleEntries.filter(function(e) { return e.logged_at; });
+  var subjects = new Set(visibleEntries.map(function(e) { return e.subject; }));
 
+  document.getElementById('stat-total').textContent = visibleEntries.length;
+  var completedEl = document.getElementById('stat-completed');
+  if (completedEl) completedEl.textContent = completedEntries.length;
   document.getElementById('stat-subjects').textContent = subjects.size;
   renderEntryList();
 }
 
 function renderEntryList() {
+  function isNonPrimaryDup(e) {
+    return e.repeated_question && e.repeated_question.is_primary === false;
+  }
+
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
   var filtered = window.IB.allEntries.filter(function (e) {
+    if (isNonPrimaryDup(e)) return false; // hide non-primary dups
     if (!filter) return true;
     return (e.question_name || '').toLowerCase().includes(filter) ||
            (e.subject || '').toLowerCase().includes(filter) ||
@@ -357,7 +442,7 @@ function renderEntryList() {
   });
   var listEl = document.getElementById('entry-list');
   if (filtered.length === 0) {
-    listEl.innerHTML = '<div class="empty-db">' + (window.IB.allEntries.length === 0 ?
+    listEl.innerHTML = '<div class="empty-db">' + (window.IB.allEntries.filter(function(e){return !isNonPrimaryDup(e);}).length === 0 ?
       'No questions marked as done yet.<br>Go to an ExamMate page and use the Log tab.' :
       'No results for "' + filter + '"') + '</div>';
     return;
@@ -391,6 +476,8 @@ function renderEntryList() {
       var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
       var isTodo = e.todo_date === today;
       var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
+      var isPrimaryDup = e.repeated_question && e.repeated_question.is_primary === true;
+      var dupBadge = isPrimaryDup ? '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#E6F1FB;color:#185FA5;margin-left:4px;font-weight:600;">🔗 primary</span>' : '';
       var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
       var aCount = (e.answer_imgs || []).length;
       var aStr;
@@ -399,15 +486,13 @@ function renderEntryList() {
       } else if (e.mcq_answer) {
         aStr = '1A';
       } else if (e.mcq_answer === null) {
-        // Explicitly checked and found nothing — show red warning
         aStr = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
       } else {
-        // Legacy entry (mcq_answer undefined) — neutral display
         aStr = '0A';
       }
       html += '<div class="entry-item">' +
         '<div style="flex:1;min-width:0;">' +
-          '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + '</div>' +
+          '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + dupBadge + '</div>' +
           '<div class="entry-meta">' + (e.question_imgs || []).length + 'Q ' + aStr + ' · ' + timeStr + '</div>' +
         '</div>' +
         '<button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button>' +

@@ -4,6 +4,7 @@ window.IB = window.IB || {};
 
 window.IB.CACHE_KEY = 'ib_question_cache';
 window.IB.SETTINGS_KEY = 'ib_settings';
+window.IB.DUPLICATES_KEY = 'ib_duplicates_cache';
 window.IB.KNOWN_SUBJECTS = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -28,6 +29,17 @@ window.IB.loadCache = async function() {
 
 window.IB.saveCache = async function(entries) {
   try { await chrome.storage.local.set({ [window.IB.CACHE_KEY]: entries }); } catch (e) {}
+};
+
+// ── Duplicates cache ──────────────────────────────────────────────────────────
+
+// A duplicate group: { id: string, questions: string[], primary: string }
+window.IB.loadDuplicates = async function() {
+  try { var s = await chrome.storage.local.get([window.IB.DUPLICATES_KEY]); return s[window.IB.DUPLICATES_KEY] || []; } catch (e) { return []; }
+};
+
+window.IB.saveDuplicates = async function(groups) {
+  try { await chrome.storage.local.set({ [window.IB.DUPLICATES_KEY]: groups }); } catch (e) {}
 };
 
 window.IB.mergeEntries = function(remote, local) {
