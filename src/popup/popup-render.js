@@ -71,9 +71,19 @@ function renderCurrentQuestion(data) {
 
   var logged = window.IB.allEntries.some(function (e) { return e.question_name === data.question_name; });
   document.getElementById('already-logged-row').style.display = logged ? 'flex' : 'none';
+  
   var logBtn = document.getElementById('log-btn');
-  logBtn.disabled = false; logBtn.classList.remove('success');
-  document.getElementById('log-btn-text').textContent = logged ? 'Mark as done again (Update record)' : 'Mark as done';
+  var primaryName = window.IB.isNonPrimaryDuplicate(data.question_name);
+  if (primaryName) {
+    logBtn.disabled = true;
+    logBtn.title = 'This is a duplicate of [' + primaryName + ']. Please log the primary question instead.';
+    document.getElementById('log-btn-text').textContent = 'Duplicate (See Primary)';
+  } else {
+    logBtn.disabled = false;
+    logBtn.title = '';
+    logBtn.classList.remove('success');
+    document.getElementById('log-btn-text').textContent = logged ? 'Mark as done again (Update record)' : 'Mark as done';
+  }
 }
 
 // ── Questions panel ───────────────────────────────────────────────────────────

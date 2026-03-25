@@ -14,6 +14,24 @@ function useFirebase() {
   return window.IB.credentialsValid && window.IB.appSettings.mode === 'firebase' && window.IB.appSettings.firebaseApiKey && window.IB.appSettings.firebaseProjectId;
 }
 
+window.IB.isNonPrimaryDuplicate = function(name) {
+  if (!name) return false;
+  
+  // Normalize: if the name starts with "DUPLICATE [" and ends with "]", strip it
+  var cleanName = name;
+  if (name.indexOf('DUPLICATE [') === 0 && name.lastIndexOf(']') === name.length - 1) {
+    cleanName = name.substring(11, name.length - 1);
+  }
+
+  var groups = window.IB.duplicatesDB || [];
+  for (var i = 0; i < groups.length; i++) {
+    var g = groups[i];
+    // Check clean name against the group's primary and list
+    if (g.primary !== cleanName && (g.questions || []).indexOf(cleanName) !== -1) return g.primary;
+  }
+  return false;
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async function () {

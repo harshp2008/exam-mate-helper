@@ -110,6 +110,14 @@ async function logAll() {
     if (response && response.error) { showMsg('error', response.error); return; }
     var questions = response.questions || [];
     if (questions.length === 0) { showMsg('error', 'No questions found in sidebar.'); return; }
+    
+    // Filter out duplicates (we only log the primary version or unique questions)
+    var originalCount = questions.length;
+    questions = questions.filter(function(q) {
+      return !window.IB.isNonPrimaryDuplicate(q.question_name);
+    });
+    var skippedDups = originalCount - questions.length;
+
     var added = 0, updated = 0, failed = 0;
     for (var i = 0; i < questions.length; i++) {
       var q = questions[i]; delete q.is_active;
@@ -130,6 +138,7 @@ async function logAll() {
     }
     await window.IB.saveCache(window.IB.allEntries);
     var msg = 'Done! Added ' + added + ', updated ' + updated;
+    if (skippedDups > 0) msg += '. Skipped ' + skippedDups + ' duplicates';
     if (failed > 0) msg += ', ' + failed + ' failed';
     showMsg(failed > 0 ? 'error' : 'success', msg + '. Total: ' + window.IB.allEntries.length);
     if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
