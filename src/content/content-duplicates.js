@@ -312,7 +312,10 @@ function autoFindDuplicates() {
             primary:   primary,
             marked_by_user: false
           };
-          chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup }, function() {
+          var nameUrls = {};
+          allNames.forEach(function(n) { nameUrls[n] = window.location.href; });
+
+          chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup, nameUrls: nameUrls }, function() {
             console.log('[IB] Auto-duplicate saved:', allNames.join(', '), '(' + Math.round(similarity * 100) + '% match, primary=' + primary + ')');
             processNext();
           });
@@ -428,12 +431,19 @@ function openDupSidebar(currentQName) {
     }
 
     buildDupSidebarContent();
-
-    // Open the sidebar
-    var sidebar = document.getElementById('ib-dup-sidebar');
-    var row = document.querySelector('#app > div.row');
-    if (sidebar) sidebar.classList.add('open');
-    if (row) row.classList.add('ib-dup-open');
+    
+    // Open the sidebar with a short delay/retry if the element isn't in DOM yet (due to ensureDupSidebar timeout)
+    function tryShow() {
+      var sidebar = document.getElementById('ib-dup-sidebar');
+      var row = document.querySelector('#app > div.row');
+      if (sidebar && row) {
+        sidebar.classList.add('open');
+        row.classList.add('ib-dup-open');
+      } else {
+        setTimeout(tryShow, 100);
+      }
+    }
+    tryShow();
   });
 }
 
@@ -726,7 +736,17 @@ function iboSave() {
     marked_by_user: true
   };
 
-  chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: groupToSave }, function(res) {
+  // Capture current URL and map it to the current question name if possible
+  var currentUrl = window.location.href;
+  var nameMap = {};
+  var activeLi = document.querySelector('#questions-list1 li.active[id^="qid-"]');
+  if (activeLi) {
+    var ns = activeLi.querySelector('.ib-qname-text') || activeLi.querySelector('span');
+    var activeName = ns ? (ns.getAttribute('data-realname') || ns.textContent.trim()) : '';
+    if (activeName) nameMap[activeName] = currentUrl;
+  }
+
+  chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: groupToSave, nameUrls: nameMap }, function(res) {
     if (chrome.runtime.lastError) {
       iboShowMsg('error', 'Error: ' + chrome.runtime.lastError.message);
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }

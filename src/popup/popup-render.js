@@ -371,6 +371,28 @@ function renderDupsPanel() {
     var srcBadge = byUser
       ? '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#E1F5EE;color:#0F6E56;margin-left:6px;font-weight:600;">\u270F\uFE0F User</span>'
       : '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#EDE7F6;color:#512DA8;margin-left:6px;font-weight:600;">\uD83E\uDD16 AI</span>';
+    var findUrl = function(name, groupQuestions) {
+      // 1. Direct match
+      var ex = window.IB.allEntries.find(function(e) { return e.question_name === name; });
+      if (ex && ex.source_url && ex.source_url !== 'undefined') return ex.source_url;
+      
+      // 2. Fallback: Any question in the same group that has a URL
+      if (groupQuestions) {
+        for (var i = 0; i < groupQuestions.length; i++) {
+          var other = window.IB.allEntries.find(function(e) { return e.question_name === groupQuestions[i]; });
+          if (other && other.source_url && other.source_url !== 'undefined') return other.source_url;
+        }
+      }
+      // 3. Last resort: Generate a search URL on ExamMate
+      var u = name.toUpperCase();
+      var sId = u.includes('CHEMI') ? '7' : u.includes('PHYSI') || u.includes('PHYS') ? '92' : u.includes('MATH') ? '102' : u.includes('BIOL') || u.includes('BIO') ? '93' : '';
+      if (sId) {
+        return 'https://www.exam-mate.com/topicalpastpapers?subject=' + sId + '&search=' + encodeURIComponent(name);
+      }
+      
+      return '';
+    };
+
     return '<div class="dup-group-card" data-gidx="' + gi + '" data-gid="' + (g.id || '') + '">' +
       '<div class="dup-group-card-header">' +
         '<span class="dup-group-primary-label">\u2605 Primary' + srcBadge + '</span>' +
@@ -379,11 +401,13 @@ function renderDupsPanel() {
           '<button class="dup-group-del-btn" data-gid="' + (g.id || '') + '" title="Remove duplicate group" style="background:none;border:1px solid #f5c6c6;border-radius:5px;color:#A32D2D;cursor:pointer;padding:2px 7px;font-size:11px;">\uD83D\uDDD1</button>' +
         '</div>' +
       '</div>' +
-      '<div class="dup-group-primary-name">' + primary + '</div>' +
+      '<div class="dup-group-primary-name ib-nav-link" data-qname="' + primary + '" data-url="' + findUrl(primary, qList) + '" data-open-dups="1" style="cursor:pointer; color:#185FA5;">' + primary + '</div>' +
       (others.length > 0 ?
         '<div class="dup-group-others">' +
           '<div class="dup-group-other-label">Other duplicates</div>' +
-          others.map(function(n) { return '<div class="dup-group-other-name">' + n + '</div>'; }).join('') +
+          others.map(function(n) { 
+            return '<div class="dup-group-other-name ib-nav-link" data-qname="' + n + '" data-url="' + findUrl(n, qList) + '" data-open-dups="1" style="cursor:pointer; color:#185FA5;">' + n + '</div>'; 
+          }).join('') +
         '</div>' : '') +
     '</div>';
   }).join('');
@@ -527,9 +551,13 @@ document.addEventListener('click', function(e) {
       try {
         var u = new URL(url);
         u.searchParams.set('ib_focus', qname);
+        u.searchParams.set('search', qname); // Force sidebar filter for reliable focus
+        if (navLink.getAttribute('data-open-dups') === '1') {
+          u.searchParams.set('ib_open_dups', '1');
+        }
         var finalUrl = u.toString();
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-          if (tabs[0] && tabs[0].url && tabs[0].url.includes('exam-mate.com')) {
+          if (tabs[0] && tabs[0].url && tabs[0].url.indexOf('exam-mate.com') !== -1) {
             chrome.tabs.update(tabs[0].id, {url: finalUrl});
           } else {
             chrome.tabs.create({url: finalUrl});

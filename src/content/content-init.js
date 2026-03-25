@@ -58,14 +58,22 @@ function setupPersistentObserver() {
         setTimeout(function() {
           var lis = document.querySelectorAll('#questions-list1 li[id^="qid-"]');
           for (var i = 0; i < lis.length; i++) {
-            var span = lis[i].querySelector('.ib-qname-text') || lis[i].querySelector('span');
-            if (span && span.textContent.trim() === focusQ) {
+            var textEl = lis[i].querySelector('.ib-qname-text') || lis[i].querySelector('span');
+            var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
+            
+            if (realName === focusQ || (textEl && textEl.textContent.trim() === focusQ)) {
               lis[i].click();
               lis[i].scrollIntoView({behavior: 'smooth', block: 'center'});
               
+              var sp = new URLSearchParams(window.location.search);
+              if (sp.get('ib_open_dups') === '1' && typeof openDupSidebar === 'function') {
+                setTimeout(function() { openDupSidebar(focusQ); }, 600);
+              }
+
               // Remove the parameter from URL to avoid re-triggering on subsequent page logic
               var newUrl = new URL(window.location.href);
               newUrl.searchParams.delete('ib_focus');
+              newUrl.searchParams.delete('ib_open_dups');
               window.history.replaceState({}, '', newUrl);
               break;
             }

@@ -243,8 +243,11 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         var rq = { is_primary: isPrimary, linked_questions: others, marked_by_user: markedByUser };
         var ex = entries.find(function(e) { return e.question_name === name; });
         
+        var qUrl = (request.nameUrls && request.nameUrls[name]) || '';
+        
         if (ex) {
           ex.repeated_question = rq;
+          if (qUrl && !ex.source_url) ex.source_url = qUrl;
           // RESET DATA FOR NON-PRIMARIES
           if (!isPrimary) {
             ex.logged_at = null;
@@ -263,6 +266,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
             is_favourite: false, 
             logged_at: null, 
             todo_date: null, 
+            source_url: qUrl,
             repeated_question: rq 
           });
         }

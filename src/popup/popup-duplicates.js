@@ -221,9 +221,17 @@ window.IB.saveDuplicateGroup = async function() {
 
     // Send to background for cascading + DB persistence
     await new Promise(function(resolve, reject) {
-      chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: group }, function(res) {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(res);
+      chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        var currentUrl = (tabs[0] && tabs[0].url) || '';
+        var nameMap = {};
+        if (currentUrl && currentUrl.indexOf('exam-mate.com') !== -1) {
+          (group.questions || []).forEach(function(n) { nameMap[n] = currentUrl; });
+        }
+        
+        chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: group, nameUrls: nameMap }, function(res) {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(res);
+        });
       });
     });
 
