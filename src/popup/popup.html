@@ -102,6 +102,19 @@
     .today-clear-btn:hover { background: #f0f0f0; }
     .empty-today { text-align: center; padding: 32px 16px; color: #aaa; font-size: 12px; line-height: 1.8; }
     .today-btn-group { display: flex; align-items: center; gap: 4px; }
+    .dup-modal-header-btns { display: flex; align-items: center; gap: 8px; }
+    
+    /* Reset warning overlay */
+    .dup-reset-warning { display: none; position: absolute; inset: 0; background: #fff; z-index: 9500; flex-direction: column; padding: 20px; align-items: center; justify-content: center; text-align: center; }
+    .dup-reset-warning.open { display: flex; }
+    .dup-reset-icon { font-size: 40px; margin-bottom: 12px; }
+    .dup-reset-title { font-size: 16px; font-weight: 700; color: #d32f2f; margin-bottom: 8px; }
+    .dup-reset-text { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 16px; }
+    .dup-reset-list { margin: 10px 0; padding: 10px; background: #fff5f5; border: 1px solid #ffcdd2; border-radius: 8px; width: 100%; max-height: 120px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 11px; }
+    .dup-reset-btns { display: flex; gap: 10px; width: 100%; }
+    .dup-reset-btn { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; }
+    .dup-reset-confirm { background: #d32f2f; color: #fff; }
+    .dup-reset-cancel { background: #f0f0f0; color: #444; }
     .today-more-wrap { position: relative; }
     .today-more-btn { padding: 5px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fafafa; color: #555; cursor: pointer; line-height: 1; transition: background 0.1s; }
     .today-more-btn:hover { background: #f0f0f0; }
@@ -277,6 +290,17 @@
   <!-- ── Duplicate Modal ── -->
   <div class="dup-modal-overlay" id="dup-modal-overlay">
     <div class="dup-modal">
+      <div id="dup-reset-warning" class="dup-reset-warning">
+        <div class="dup-reset-icon">⚠️</div>
+        <div class="dup-reset-title">Data Reset Required</div>
+        <div class="dup-reset-text">Only the primary question can have status data. Saving this group will reset the Logged, Favourite, and Todo status for:</div>
+        <div id="dup-reset-list" class="dup-reset-list"></div>
+        <div class="dup-reset-btns">
+          <button id="dup-reset-cancel-btn" class="dup-reset-btn dup-reset-cancel">Cancel</button>
+          <button id="dup-reset-confirm-btn" class="dup-reset-btn dup-reset-confirm">Confirm & Save</button>
+        </div>
+      </div>
+
       <div class="dup-modal-header">
         <span class="dup-modal-title">🔗 Mark as Duplicate</span>
         <button class="dup-modal-close" id="dup-modal-close-btn" title="Close">✕</button>

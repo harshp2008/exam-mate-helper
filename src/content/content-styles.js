@@ -156,7 +156,7 @@ function injectAllCSS() {
     // Make the row a non-wrapping flex row so sidebar sits beside the columns
     '#app > div.row { flex-wrap: nowrap !important; align-items: stretch !important; }',
     '#ib-dup-sidebar {',
-    '  display: flex;',
+    '  display: flex; position: relative;',
     '  width: 0; min-width: 0; max-width: 0; overflow: hidden; flex-shrink: 0; flex-grow: 0;',
     '  opacity: 0; visibility: hidden;',
     '  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease-out, visibility 0.2s;',
@@ -171,7 +171,7 @@ function injectAllCSS() {
     '#app > div.row.ib-dup-open div.col-xl-9.col-lg-8.ps-lg-1 {',
     '  width: calc(100% - 325px - 340px) !important;',
     '}',
-    '#ib-dup-sidebar .ibo-inner { padding: 16px 14px; display: flex; flex-direction: column; gap: 0; min-width: 340px; }',
+    '#ib-dup-sidebar .ibo-inner { padding: 16px 14px; display: flex; flex-direction: column; gap: 0; min-width: 340px; position: relative; box-sizing: border-box; }',
     '#ib-dup-sidebar .ibo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }',
     '#ib-dup-sidebar .ibo-title { font-size: 15px; font-weight: 700; color: #185FA5; display: flex; align-items: center; gap: 8px; }',
     '#ib-dup-sidebar .ibo-close { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 3px 9px; cursor: pointer; font-size: 13px; color: #555; }',

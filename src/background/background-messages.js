@@ -238,15 +238,33 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       var markedByUser = (group.marked_by_user !== false); // default true
 
       allNames.forEach(function(name) {
+        var isPrimary = (name === primary);
         var others = allNames.filter(function(n) { return n !== name; });
-        var rq = { is_primary: name === primary, linked_questions: others, marked_by_user: markedByUser };
+        var rq = { is_primary: isPrimary, linked_questions: others, marked_by_user: markedByUser };
         var ex = entries.find(function(e) { return e.question_name === name; });
+        
         if (ex) {
           ex.repeated_question = rq;
+          // RESET DATA FOR NON-PRIMARIES
+          if (!isPrimary) {
+            ex.logged_at = null;
+            ex.is_favourite = false;
+            ex.todo_date = null;
+          }
         } else {
           var u = name.toUpperCase();
           var subj = u.includes('CHEMI') ? 'chemistry' : u.includes('PHYSI') || u.includes('PHYS') ? 'physics' : u.includes('MATH') ? 'mathematics' : u.includes('BIOL') || u.includes('BIO') ? 'biology' : 'other';
-          entries.unshift({ question_name: name, subject: subj, question_imgs: [], answer_imgs: [], old_topics: '', is_favourite: false, logged_at: null, todo_date: null, repeated_question: rq });
+          entries.unshift({ 
+            question_name: name, 
+            subject: subj, 
+            question_imgs: [], 
+            answer_imgs: [], 
+            old_topics: '', 
+            is_favourite: false, 
+            logged_at: null, 
+            todo_date: null, 
+            repeated_question: rq 
+          });
         }
       });
 

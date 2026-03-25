@@ -161,9 +161,37 @@ function addToDupGroup(name) {
 window.IB.saveDuplicateGroup = async function() {
   var group = window.IB._dupGroup;
   var msgEl = document.getElementById('dup-modal-msg');
+  var warningEl = document.getElementById('dup-reset-warning');
+  var listEl = document.getElementById('dup-reset-list');
 
   // Promote to user-verified if manually saved
   group.marked_by_user = true;
+
+  // 1. VIOLATION CHECK: Find non-primary questions that already have data
+  var violations = (group.questions || []).filter(function(name) {
+    if (name === group.primary) return false;
+    var ex = (window.IB.allEntries || []).find(function(e) { return e.question_name === name; });
+    return ex && (ex.logged_at || ex.is_favourite || ex.todo_date);
+  });
+
+  if (violations.length > 0 && !window.IB._resetConfirmed) {
+    listEl.innerHTML = violations.map(function(v) { return '• ' + v; }).join('<br>');
+    warningEl.classList.add('open');
+    
+    document.getElementById('dup-reset-cancel-btn').onclick = function() {
+      warningEl.classList.remove('open');
+    };
+    document.getElementById('dup-reset-confirm-btn').onclick = function() {
+      warningEl.classList.remove('open');
+      window.IB._resetConfirmed = true;
+      window.IB.saveDuplicateGroup(); // Retry with confirmation flag
+    };
+    return;
+  }
+  
+  // Reset confirmation flag after check
+  var confirmed = !!window.IB._resetConfirmed;
+  window.IB._resetConfirmed = false;
 
   function showDupMsg(type, text) {
     msgEl.textContent = text;

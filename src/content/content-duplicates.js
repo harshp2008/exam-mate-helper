@@ -482,6 +482,18 @@ function buildDupSidebarContent() {
       (isExisting ? '<button class="ibo-remove-group" id="ibo-remove-btn">\uD83D\uDDD1 Remove group</button>' : '') +
       '<button class="ibo-cancel" id="ibo-cancel-btn">Cancel</button>' +
       '<button class="ibo-save" id="ibo-save-btn">Save</button>' +
+    '</div>' +
+    
+    // Reset Warning Overlay
+    '<div id="ibo-reset-warning" class="ibo-reset-warning" style="display:none;position:absolute;inset:0;background:#fff;z-index:9999;flex-direction:column;padding:20px;align-items:center;justify-content:center;text-align:center;">' +
+      '<div style="font-size:32px;margin-bottom:10px;">\u26A0\uFE0F</div>' +
+      '<div style="font-size:15px;font-weight:700;color:#d32f2f;margin-bottom:8px;">Data Reset Required</div>' +
+      '<div style="font-size:12px;color:#555;line-height:1.4;margin-bottom:12px;">Only the primary question can have status data. Saving will reset Logged, Favourite, and Todo status for:</div>' +
+      '<div id="ibo-reset-list" style="margin:8px 0;padding:8px;background:#fff5f5;border:1px solid #ffcdd2;border-radius:6px;width:100%;max-height:100px;overflow-y:auto;text-align:left;font-family:monospace;font-size:11px;"></div>' +
+      '<div style="display:flex;gap:8px;width:100%;margin-top:10px;">' +
+        '<button id="ibo-reset-cancel-btn" style="flex:1;padding:8px;border-radius:4px;border:none;background:#f0f0f0;color:#444;font-weight:600;cursor:pointer;">Cancel</button>' +
+        '<button id="ibo-reset-confirm-btn" style="flex:1;padding:8px;border-radius:4px;border:none;background:#d32f2f;color:#fff;font-weight:600;cursor:pointer;">Confirm & Save</button>' +
+      '</div>' +
     '</div>';
 
   // Render initial chips + dropdown
@@ -675,6 +687,33 @@ function iboSave() {
     iboShowMsg('error', '\u26A0\uFE0F These questions are in other groups: ' + conflicts.join(', '));
     return;
   }
+
+  // Violation Check: Non-primary questions with data
+  var violations = g.questions.filter(function(name) {
+    if (name === g.primary) return false;
+    var ex = _iboAllEntries.find(function(e) { return e.question_name === name; });
+    return ex && (ex.logged_at || ex.is_favourite || ex.todo_date);
+  });
+
+  if (violations.length > 0 && !window._iboResetConfirmed) {
+    var warningEl = document.getElementById('ibo-reset-warning');
+    var listEl    = document.getElementById('ibo-reset-list');
+    if (warningEl && listEl) {
+      listEl.innerHTML = violations.map(function(v) { return '\u2022 ' + v; }).join('<br>');
+      warningEl.style.display = 'flex';
+      
+      document.getElementById('ibo-reset-cancel-btn').onclick = function() {
+        warningEl.style.display = 'none';
+      };
+      document.getElementById('ibo-reset-confirm-btn').onclick = function() {
+        warningEl.style.display = 'none';
+        window._iboResetConfirmed = true;
+        iboSave(); // Retry
+      };
+      return;
+    }
+  }
+  window._iboResetConfirmed = false;
 
   var saveBtn = document.getElementById('ibo-save-btn');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving\u2026'; }

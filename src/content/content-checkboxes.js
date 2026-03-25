@@ -283,6 +283,7 @@ function markDupItems(list, dupInfo) {
     }
 
     var info = dupInfo[realName];
+    li._ibDupData = info; // Always update with latest info for the hover listener
     var isDupSecondary = info && !info.is_primary;
 
     if (isDupSecondary) {
@@ -299,17 +300,22 @@ function markDupItems(list, dupInfo) {
         nameNode.innerHTML = 'DUPLICATE<span class="ib-dup-label"> [' + realNameStored + ']</span>';
       }
 
-      // Attach hover tooltip (only once per li)
+      // Attach hover tooltip (only once per li, but data is dynamic)
       if (!li._ibDupTooltipAttached) {
         li._ibDupTooltipAttached = true;
-        var dupData = info;
-        var qRealName = realName;
-
+        
         li.addEventListener('mouseenter', function(e) {
+          var dupData = this._ibDupData;
+          if (!dupData) return;
+
           clearTimeout(showTimer);
           showTimer = setTimeout(function() {
             var primary = dupData.primary_name || '—';
-            var others = dupData.linked_questions || [];
+            // Exclude both the current question AND the primary question from the "others" list
+            var others = (dupData.linked_questions || []).filter(function(n) {
+              return n !== primary;
+            });
+
             tooltip.innerHTML =
               '<div class="ib-dup-tooltip-title">\uD83D\uDD17 Duplicate' +
               (dupData.marked_by_user === false
