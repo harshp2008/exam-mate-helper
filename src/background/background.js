@@ -70,7 +70,12 @@ async function markTab(tabId) {
   groups.forEach(function(g) {
     var qList = g.questions || [];
     qList.forEach(function(name) {
-      dupInfo[name] = { is_primary: name === g.primary, linked_questions: qList.filter(function(n) { return n !== name; }), primary_name: g.primary || qList[0] || '' };
+      dupInfo[name] = { 
+        is_primary: name === g.primary, 
+        linked_questions: qList.filter(function(n) { return n !== name; }), 
+        primary_name: g.primary || qList[0] || '',
+        marked_by_user: g.marked_by_user
+      };
     });
   });
   try {

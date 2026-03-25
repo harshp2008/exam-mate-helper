@@ -1,5 +1,9 @@
 // content-duplicates.js — Auto-detect duplicates, duplicate sidebar, image comparison
 
+// ── Configuration ────────────────────────────────────────────────────────────
+var IB_DUP_TOLERANCE = 0.90; // Similarity threshold (0-1) for auto-detection
+var IB_COMPARE_RES    = 600;  // Max resolution for pixel-level comparison
+
 // ── IB Name parser ────────────────────────────────────────────────────────────
 
 /**
@@ -15,7 +19,69 @@ function parseIBName(name) {
   return { subject: m[1].toUpperCase(), paper: m[2], tz: parseInt(m[3], 10), rest: m[4] };
 }
 
-// ── Image comparison ──────────────────────────────────────────────────────────
+/**
+ * Trims white borders from an ImageData object.
+ * Returns a new canvas with the trimmed content.
+ */
+function trimImage(img, W, H) {
+  var data = img.data;
+  var top = 0, bottom = H - 1, left = 0, right = W - 1;
+
+  // Threshold for "white" (considering some noise/grayish backgrounds)
+  var isWhite = function(x, y) {
+    var idx = (y * W + x) * 4;
+    return data[idx] > 240 && data[idx+1] > 240 && data[idx+2] > 240;
+  };
+
+  while (top < H && Array.from({length: W}, (_, x) => isWhite(x, top)).every(v => v)) top++;
+  while (bottom > top && Array.from({length: W}, (_, x) => isWhite(x, bottom)).every(v => v)) bottom--;
+  while (left < W && Array.from({length: H}, (_, y) => isWhite(left, y)).every(v => v)) left++;
+  while (right > left && Array.from({length: H}, (_, y) => isWhite(right, y)).every(v => v)) right--;
+
+  var newW = right - left + 1;
+  var newH = bottom - top + 1;
+  if (newW <= 0 || newH <= 0) return null;
+
+  var canvas = document.createElement('canvas');
+  canvas.width = newW; canvas.height = newH;
+  var ctx = canvas.getContext('2d');
+  ctx.putImageData(img, -left, -top);
+  return canvas;
+}
+
+/**
+ * Computes a Difference Hash (dHash) for an image.
+ * Resizes to 17x16 to produce a 256-bit (16x16) hash.
+ */
+function computeDHash(imageSource) {
+  var size = 16;
+  var canvas = document.createElement('canvas');
+  canvas.width = size + 1; canvas.height = size;
+  var ctx = canvas.getContext('2d');
+  ctx.drawImage(imageSource, 0, 0, size + 1, size);
+  var imgData = ctx.getImageData(0, 0, size + 1, size).data;
+
+  var hash = "";
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      var i1 = (y * (size + 1) + x) * 4;
+      var i2 = (y * (size + 1) + (x + 1)) * 4;
+      // Simple grayscale: (r+g+b)/3
+      var g1 = (imgData[i1] + imgData[i1+1] + imgData[i1+2]) / 3;
+      var g2 = (imgData[i2] + imgData[i2+1] + imgData[i2+2]) / 3;
+      hash += (g1 > g2 ? "1" : "0");
+    }
+  }
+  return hash;
+}
+
+function getHammingDistance(h1, h2) {
+  var dist = 0;
+  for (var i = 0; i < h1.length; i++) {
+    if (h1[i] !== h2[i]) dist++;
+  }
+  return dist;
+}
 
 /**
  * Computes average pixel-level similarity (0–1) across ALL image pairs.
@@ -40,46 +106,72 @@ function compareAllImages(imgs1, imgs2) {
   function comparePair(url1, url2) {
     return Promise.all([loadImg(url1), loadImg(url2)]).then(function(imgs) {
       var img1 = imgs[0], img2 = imgs[1];
+      
+      // 1. Pre-process: Trim white borders to align core content
       var W1 = img1.naturalWidth || img1.width || 1;
       var H1 = img1.naturalHeight || img1.height || 1;
       var W2 = img2.naturalWidth || img2.width || 1;
       var H2 = img2.naturalHeight || img2.height || 1;
 
-      // Rule 2: If physical dimensions differ significantly, reject
-      var hDiff = Math.abs(H1 - H2) / Math.max(H1, H2);
-      var wDiff = Math.abs(W1 - W2) / Math.max(W1, W2);
-      if (hDiff > 0.12 || wDiff > 0.12) {
-        console.log('[IB Auto-Dup] Size mismatch: (hDiff=' + Math.round(hDiff*100) + '%, wDiff=' + Math.round(wDiff*100) + '%) for ' + url1);
-        return 0; 
-      }
+      // Extract raw data for trimming
+      var cTmp1 = document.createElement('canvas');
+      cTmp1.width = W1; cTmp1.height = H1;
+      var ctxTmp1 = cTmp1.getContext('2d', { willReadFrequently: true });
+      ctxTmp1.drawImage(img1, 0, 0);
+      var trimmed1 = trimImage(ctxTmp1.getImageData(0, 0, W1, H1), W1, H1) || img1;
 
-      var W = Math.min(W1, W2), H = Math.min(H1, H2);
-      // Cap for performance
-      if (W > 600) { H = Math.round(H * 600 / W); W = 600; }
-      if (H > 600) { W = Math.round(W * 600 / H); H = 600; }
+      var cTmp2 = document.createElement('canvas');
+      cTmp2.width = W2; cTmp2.height = H2;
+      var ctxTmp2 = cTmp2.getContext('2d', { willReadFrequently: true });
+      ctxTmp2.drawImage(img2, 0, 0);
+      var trimmed2 = trimImage(ctxTmp2.getImageData(0, 0, W2, H2), W2, H2) || img2;
+
+      // 2. Perform Perceptual Hash comparison (on trimmed content)
+      var hash1 = computeDHash(trimmed1);
+      var hash2 = computeDHash(trimmed2);
+      var hDist = getHammingDistance(hash1, hash2);
+      var hashSim = 1 - (hDist / hash1.length);
+
+      // If hashes are extremely similar, we are very confident
+      if (hashSim > 0.98) return hashSim;
+
+      // 3. Fallback: Pixelmatch on aligned/trimmed content
+      var TW1 = trimmed1.width, TH1 = trimmed1.height;
+      var TW2 = trimmed2.width, TH2 = trimmed2.height;
+      
+      var W = Math.min(TW1, TW2), H = Math.min(TH1, TH2);
+      if (W > IB_COMPARE_RES) { H = Math.round(H * IB_COMPARE_RES / W); W = IB_COMPARE_RES; }
+      if (H > IB_COMPARE_RES) { W = Math.round(W * IB_COMPARE_RES / H); H = IB_COMPARE_RES; }
 
       var canvas1 = document.createElement('canvas');
       canvas1.width = W; canvas1.height = H;
       var ctx1 = canvas1.getContext('2d', { willReadFrequently: true });
-      ctx1.drawImage(img1, 0, 0, W, H);
+      ctx1.drawImage(trimmed1, 0, 0, W, H);
       var d1 = ctx1.getImageData(0, 0, W, H);
 
       var canvas2 = document.createElement('canvas');
       canvas2.width = W; canvas2.height = H;
       var ctx2 = canvas2.getContext('2d', { willReadFrequently: true });
-      ctx2.drawImage(img2, 0, 0, W, H);
+      ctx2.drawImage(trimmed2, 0, 0, W, H);
       var d2 = ctx2.getImageData(0, 0, W, H);
 
-      // Use the official pixelmatch library (available globally from src/content/lib/pixelmatch.js)
-      // threshold: 0.1 is standard, but we'll use 0.12 for more leniency on text-heavy images
       var mismatchedPixels = pixelmatch(d1.data, d2.data, null, W, H, { 
-        threshold: 0.12, 
-        includeAA: false 
+        threshold: 0.15, 
+        includeAA: true 
       });
 
       var pixelSim = 1 - (mismatchedPixels / (W * H));
-      return pixelSim * (1 - (hDiff + wDiff));
-    }).catch(function() { return -1; });
+      var finalScore = Math.max(hashSim, pixelSim);
+      
+      // Lenient size penalty
+      var sizeDiff = Math.abs(TW1*TH1 - TW2*TH2) / Math.max(TW1*TH1, TW2*TH2);
+      if (sizeDiff > 0.3) finalScore *= 0.9;
+
+      return finalScore;
+    }).catch(function(err) { 
+      console.error('[IB Auto-Dup] Comparison error:', err);
+      return -1; 
+    });
   }
 
   var pairs = [];
@@ -207,7 +299,7 @@ function autoFindDuplicates() {
 
       compareAllImages(e1.entry.question_imgs, e2.entry.question_imgs).then(function(similarity) {
         console.log('[IB Auto-Dup] ' + e1.entry.question_name + ' vs ' + e2.entry.question_name + ' → ' + Math.round(similarity * 100) + '%');
-        if (similarity >= 0.90) {
+        if (similarity >= IB_DUP_TOLERANCE) {
           var allNames = bucket.map(function(b) { return b.entry.question_name; });
           // Primary = highest timezone number
           var primary = bucket.reduce(function(best, b) {
