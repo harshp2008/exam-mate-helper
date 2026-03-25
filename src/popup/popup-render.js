@@ -383,12 +383,7 @@ function renderDupsPanel() {
       var idx = parseInt(this.getAttribute('data-gidx'), 10);
       var g = (window.IB.duplicatesDB || [])[idx];
       if (!g) return;
-      // Notify the page's content script to open the sidebar with this group
-      // (Inject via background message or direct tab message)
-      chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-        if (!tabs || !tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'openDupSidebarForGroup', groupId: g.id });
-      });
+      window.IB.openDuplicateModal(g.id);
     });
   });
 

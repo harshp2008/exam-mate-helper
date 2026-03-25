@@ -7,21 +7,37 @@ window.IB._dupGroup = { id: null, questions: [], primary: '' };
 
 // ── Open / Close modal ────────────────────────────────────────────────────────
 
-window.IB.openDuplicateModal = function(currentQName) {
+window.IB.openDuplicateModal = function(target) {
   var modal = document.getElementById('dup-modal-overlay');
   if (!modal) return;
 
-  // Pre-populate from existing group if any
-  var existing = (window.IB.duplicatesDB || []).find(function(g) {
-    return g.questions && g.questions.indexOf(currentQName) !== -1;
-  });
+  var existing = null;
+  if (typeof target === 'string' && target.indexOf('dup_') === 0) {
+    // Target is a groupId
+    existing = (window.IB.duplicatesDB || []).find(function(g) { return g.id === target; });
+  } else if (target) {
+    // Target is a question name
+    existing = (window.IB.duplicatesDB || []).find(function(g) {
+      return g.questions && g.questions.indexOf(target) !== -1;
+    });
+  }
 
   if (existing) {
-    window.IB._dupGroup = { id: existing.id, questions: existing.questions.slice(), primary: existing.primary || existing.questions[0] || '' };
+    window.IB._dupGroup = { 
+      id: existing.id, 
+      questions: (existing.questions || []).slice(), 
+      primary: existing.primary || existing.questions[0] || '',
+      marked_by_user: existing.marked_by_user
+    };
   } else {
-    // Start fresh with the current question
+    // Start fresh with the current question (if provided) or empty
     var newId = 'dup_' + Date.now();
-    window.IB._dupGroup = { id: newId, questions: currentQName ? [currentQName] : [], primary: currentQName || '' };
+    window.IB._dupGroup = { 
+      id: newId, 
+      questions: target ? [target] : [], 
+      primary: target || '',
+      marked_by_user: true // Manual groups are marked by user
+    };
   }
 
   // Reset UI
@@ -33,12 +49,16 @@ window.IB.openDuplicateModal = function(currentQName) {
   renderPrimaryDropdown();
 
   modal.classList.add('open');
+  document.body.classList.add('ib-modal-open');
   document.getElementById('dup-search-input').focus();
 };
 
 window.IB.closeDuplicateModal = function() {
   var modal = document.getElementById('dup-modal-overlay');
-  if (modal) modal.classList.remove('open');
+  if (modal) {
+    modal.classList.remove('open');
+    document.body.classList.remove('ib-modal-open');
+  }
 };
 
 // ── Render chips (current group members) ──────────────────────────────────────
@@ -142,6 +162,9 @@ window.IB.saveDuplicateGroup = async function() {
   var group = window.IB._dupGroup;
   var msgEl = document.getElementById('dup-modal-msg');
 
+  // Promote to user-verified if manually saved
+  group.marked_by_user = true;
+
   function showDupMsg(type, text) {
     msgEl.textContent = text;
     msgEl.className = 'inline-msg ' + type;
@@ -186,6 +209,7 @@ window.IB.saveDuplicateGroup = async function() {
 
     // Refresh open panels
     if (document.getElementById('panel-db') && document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
+    if (document.getElementById('panel-dups') && document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
 
     setTimeout(window.IB.closeDuplicateModal, 1500);
   } catch(e) {
