@@ -76,6 +76,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'markDone') {
     // Called by background after sync — updates colours + checkboxes + hides overlay
     injectAllCSS();
+    injectHighPriorityCSS();
     injectDoneCheckboxes();
     var list = document.getElementById('questions-list1');
     if (list) {

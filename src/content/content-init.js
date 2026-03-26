@@ -112,6 +112,9 @@ function setupPersistentObserver() {
 
   // Ensure sidebar container exists in #app > div.row
   ensureDupSidebar();
+
+  // HIGH PRIORITY: Load at the VERY end
+  injectHighPriorityCSS();
 })();
 
 // ── Manual Rescan Coordination ───────────────────────────────────────────────
@@ -126,6 +129,7 @@ window.IB.rescanPage = function() {
   if (typeof injectDupButton === 'function') injectDupButton();
   if (typeof setupPersistentObserver === 'function') setupPersistentObserver();
   if (typeof ensureDupSidebar === 'function') ensureDupSidebar();
+  if (typeof injectHighPriorityCSS === 'function') injectHighPriorityCSS();
   
   // Trigger pixel-based duplicate detection
   if (typeof window.IB.rescanWithReset === 'function') {

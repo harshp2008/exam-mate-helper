@@ -247,8 +247,17 @@ function injectAllCSS() {
     '#app > div.row > div.col-xl-9.col-lg-8.ps-lg-1 {flex-grow: 1;}',
     '#ib-dup-nav-item a.nav-link:focus, #ib-dup-nav-item a.nav-link:active { background-color: transparent !important; outline: none !important; box-shadow: none !important; }'
 
-
-
   ].join('\n');
+  document.head.appendChild(style);
+}
+
+function injectHighPriorityCSS() {
+  const ID = 'ib-high-priority-styles';
+  const existing = document.getElementById(ID);
+  if (existing) existing.remove();
+
+  var style = document.createElement('style');
+  style.id = ID;
+  style.textContent = 'img.img-fluid:last-child { padding-bottom: 100px !important; }';
   document.head.appendChild(style);
 }
