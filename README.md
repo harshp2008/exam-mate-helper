@@ -7,11 +7,11 @@ Declutters the ExamMate UI and gives you the tools to track every question you'v
 
 ## 🔥 Recent Updates (March 2026)
 
-- **Advanced Duplicate Detection**: Integrated the `pixelmatch` library for professional image-based comparison. It now detects duplicate questions with 90%+ pixel accuracy, even across different timezones or papers.
-- **Smart Blacklist System**: If you delete or reject an AI-detected duplicate group, the extension now remembers your choice and will never automatically re-suggest that group again.
-- **Sidebar Search Harvest**: The search box in the Duplicates sidebar now scans both your logged questions *and* questions currently visible on the ExamMate page.
-- **Modular Refactor**: The entire codebase has been reorganized into a clean, modular `src/` directory structure for better performance and maintainability.
-- **Instant UI Refreshes**: Resolved race conditions in background message processing, ensuring the extension popup and sidebar update immediately after actions.
+- **V2 Duplicate Data Architecture**: Fully migrated to a normalized, high-performance database schema (`duplicatesDB`) for structural parity between local cache and cloud Firestore.
+- **Aggressive Rescan (Rejection Reset)**: Manual rescans now perform a "Rejection Reset," allowing the system to re-evaluate previously dismissed AI duplicates if they are still relevant to the current page.
+- **Pixel-Match Resilience**: Hardened the duplicate detection engine to prioritize live page images over background cache, preventing "skipping" on partially logged questions.
+- **AJAX Navigation Support**: Full support for duplicate detection during dynamic page changes (Next Page, Search, Random) via an optimized MutationObserver bridge.
+- **Reactive UI & Status Toasts**: Instantaneous sidebar label updates and real-time progress toasts for all background engine actions.
 - **MCQ Text Answer Retrieval**: Automatically detects and displays text-based answers (e.g., "B") whenever image-based answers are missing.
 
 ---
@@ -68,10 +68,11 @@ Never lose your progress:
 Tired of seeing the same question multiple times across different timezones or papers?
 
 - **Pixelmatch Engine**: Uses high-precision pixel comparison to identify identical diagrams and text.
-- **Smart Grouping**: Automatically identifies candidate groups on the current page for review.
+- **Aggressive Manual Rescan**: Includes a **Rejection Reset** that lets you re-evaluate previously dismissed duplicates with a single click.
+- **Unified Status Labels**: Every duplicate group has a clear status (🤖 AI suggested or 🖋️ User verified) that syncs across all devices.
 - **Search Everywhere**: Search for duplicates across your entire logged database plus current page sidebar items.
-- **Rejection Blacklist**: If you delete an AI-detected group, the extension remembers it and won't bug you about it again.
-- **Primary Marker**: Designate a "Primary" version of a question to keep your data clean and organized.
+- **Fail-Safe Mechanism**: Includes an automatic scan state recovery system to prevent the engine from locking during network delays.
+- **Primary Marker**: Designate a "Primary" version of a question to keep your stats clean and organized.
 
 ---
 
