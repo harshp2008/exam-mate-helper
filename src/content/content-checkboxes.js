@@ -318,7 +318,7 @@ function markDupItems(list, dupInfo) {
 
             tooltip.innerHTML =
               '<div class="ib-dup-tooltip-title">\uD83D\uDD17 Duplicate' +
-              (dupData.marked_by_user === false
+              (dupData.status === 'ai'
                 ? ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#EDE7F6;color:#512DA8;font-weight:600;">\uD83E\uDD16 AI</span>'
                 : ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#E1F5EE;color:#0F6E56;font-weight:600;">\u270F\uFE0F User</span>') +
               '</div>' +

@@ -26,7 +26,11 @@ function setupPersistentObserver() {
       clearTimeout(ibInjectionTimeout);
       ibInjectionTimeout = setTimeout(function() {
         injectDoneCheckboxes();
-      }, 150);
+        // V2 REFIX: Ensure auto-scan runs on AJAX page changes (next page, random, search)
+        if (typeof autoFindDuplicates === 'function') {
+          autoFindDuplicates();
+        }
+      }, 250);
     }
   });
   
@@ -109,3 +113,28 @@ function setupPersistentObserver() {
   // Ensure sidebar container exists in #app > div.row
   ensureDupSidebar();
 })();
+
+// ── Manual Rescan Coordination ───────────────────────────────────────────────
+
+window.IB = window.IB || {};
+window.IB.rescanPage = function() {
+  console.log('[IB] Manual Page Rescan Triggered...');
+  if (typeof window.IB.showToast === 'function') window.IB.showToast('Rescanning page components...', 'loading');
+  
+  // Re-run all core injections
+  if (typeof injectDoneCheckboxes === 'function') injectDoneCheckboxes();
+  if (typeof injectDupButton === 'function') injectDupButton();
+  if (typeof setupPersistentObserver === 'function') setupPersistentObserver();
+  if (typeof ensureDupSidebar === 'function') ensureDupSidebar();
+  
+  // Trigger pixel-based duplicate detection
+  if (typeof window.IB.rescanWithReset === 'function') {
+    window.IB.rescanWithReset();
+  } else if (typeof window.IB.autoFindDuplicates === 'function') {
+    window.IB.autoFindDuplicates(true);
+  } else if (typeof autoFindDuplicates === 'function') {
+    autoFindDuplicates(true);
+  } else {
+    if (typeof window.IB.showToast === 'function') window.IB.showToast('Rescan complete!', 'success');
+  }
+};

@@ -30,9 +30,21 @@ async function autoSync() {
   var settings = await getSettings();
   if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
     try {
-      var remote = await fsReadAll(settings);
-      var local = await loadCache();
-      await saveCache(mergeEntries(remote, local));
+      // 1. Sync Entries
+      var remoteEntries = await fsReadAll(settings);
+      var merged = mergeEntries(remoteEntries, localEntries);
+      merged.forEach(function(e) { delete e.repeated_question; }); // V2 PURGE: ensure sync stays clean
+      await saveCache(merged);
+      
+      // 2. Sync Duplicates
+      var remoteDups = await fsReadAllDupGroups(settings);
+      var localDups = await loadDuplicates();
+      // Remote wins on ID match
+      remoteDups.forEach(function(rg) {
+        var idx = localDups.findIndex(function(lg) { return lg.id === rg.id; });
+        if (idx !== -1) localDups[idx] = rg; else localDups.push(rg);
+      });
+      await saveDuplicates(localDups);
     } catch (e) {
       console.log('IB Logger auto-sync failed:', e.message);
     }
@@ -59,8 +71,9 @@ async function markAllExamMateTabs() {
 
 async function markTab(tabId) {
   var entries = await loadCache();
-  var groups = await loadDuplicates();
-  var rejectedGroups = await loadRejectedGroups();
+  var allGroups = await loadDuplicates();
+  var groups = allGroups.filter(function(g) { return g.status !== 'ai-rejected'; });
+  var rejectedGroups = allGroups.filter(function(g) { return g.status === 'ai-rejected'; });
   var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
   var allNames = entries.filter(function (e) { return e.logged_at !== null; }).map(function (e) { return e.question_name; });
@@ -74,7 +87,7 @@ async function markTab(tabId) {
         is_primary: name === g.primary, 
         linked_questions: qList.filter(function(n) { return n !== name; }), 
         primary_name: g.primary || qList[0] || '',
-        marked_by_user: g.marked_by_user
+        status: g.status || 'user'
       };
     });
   });

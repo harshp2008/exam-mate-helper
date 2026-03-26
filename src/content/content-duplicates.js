@@ -1,6 +1,24 @@
 // content-duplicates.js — Auto-detect duplicates, duplicate sidebar, image comparison
 
 // ── Configuration ────────────────────────────────────────────────────────────
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  console.log('[IB] Content Script Received Action:', request.action);
+  if (request.action === 'ping') {
+    sendResponse({ pong: true });
+    return;
+  }
+  if (request.action === 'rescanDuplicates') {
+    if (typeof window.IB !== 'undefined' && typeof window.IB.rescanPage === 'function') {
+      console.log('[IB] Forwarding to IB.rescanPage()...');
+      window.IB.rescanPage();
+    } else {
+      console.log('[IB] window.IB.rescanPage not found, falling back to autoFindDuplicates(true)...');
+      autoFindDuplicates(true);
+    }
+    sendResponse({ ok: true });
+  }
+});
+
 var IB_DUP_TOLERANCE = 0.90; // Similarity threshold (0-1) for auto-detection
 var IB_COMPARE_RES    = 600;  // Max resolution for pixel-level comparison
 
@@ -192,12 +210,66 @@ function compareAllImages(imgs1, imgs2) {
 
 var _autoDupRunning = false;
 
-function autoFindDuplicates() {
-  if (_autoDupRunning) return;
-  _autoDupRunning = true;
+function showToast(msg, type) {
+  var id = 'ib-dup-toast';
+  var el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    el.style = 'position:fixed;bottom:20px;right:20px;z-index:99999;padding:12px 20px;border-radius:8px;background:#333;color:#fff;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:opacity 0.3s;display:flex;align-items:center;gap:10px;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = (type === 'loading' ? '<span class="ib-spin">⌛</span> ' : (type === 'success' ? '✨ ' : '🔍 ')) + msg;
+  el.style.opacity = '1';
+  if (type !== 'loading') {
+    setTimeout(function() { if (el) el.style.opacity = '0'; }, 4000);
+  }
+}
 
-  chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
-    if (chrome.runtime.lastError || !res) { _autoDupRunning = false; return; }
+// Export for cross-script access
+window.IB = window.IB || {};
+window.IB.showToast = showToast;
+
+function autoFindDuplicates(isManual) {
+  if (_autoDupRunning && !isManual) return;
+  _autoDupRunning = true;
+  window.IB.autoFindDuplicates = autoFindDuplicates;
+  
+  // V2 FAIL-SAFE: If scan hangs, force reset
+  var safetyTimer = setTimeout(function() { _autoDupRunning = false; }, 15000);
+  
+  startScanInternal(isManual);
+}
+
+// V2 REFIX: Unified rescan chain for manual overrides
+window.IB.rescanWithReset = function() {
+  _autoDupRunning = false; // Force unlock
+  if (typeof showToast === 'function') showToast('🔍 Preparing rescan (clearing previous rejections)...', 'loading');
+
+  var list = document.getElementById('questions-list1');
+  var visibleNames = [];
+  if (list) {
+    visibleNames = Array.from(list.querySelectorAll('li[id^="qid-"]')).map(function(li) {
+      var sp = li.querySelector('.ib-qname-text') || li.querySelector('span');
+      return sp ? (sp.getAttribute('data-realname') || sp.textContent.trim()) : '';
+    }).filter(Boolean);
+  }
+
+  chrome.runtime.sendMessage({ action: 'clearRejectionsForPage', questionNames: visibleNames }, function(res) {
+    console.log('[IB] Rejections cleared for rescan:', res);
+    // V2 REFIX: Must pass true here to ensure completion toast clears the loading toast
+    setTimeout(function() { autoFindDuplicates(true); }, 500);
+  });
+};
+
+function startScanInternal(isManual) {
+    console.log('[IB Auto-Dup] Starting Pixel Scan...');
+    chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
+      if (chrome.runtime.lastError || !res) { 
+        _autoDupRunning = false; 
+        if (isManual && typeof showToast === 'function') showToast('Scan failed: No data from background.', 'error');
+        return; 
+      }
 
     var entries = res.entries || [];
     var existingGroups = res.groups || [];
@@ -208,9 +280,10 @@ function autoFindDuplicates() {
       (g.questions || []).forEach(function(n) { alreadyGrouped.add(n); });
     });
 
-    // Also read question names + image URLs from the current page DOM as a supplement
     var pageImgMap = {};  // name → [imgUrls]
-    var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"]');
+    var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"], .ib-question-item');
+    console.log('[IB Auto-Dup] Harvesting from ' + pageItems.length + ' page items...');
+    
     pageItems.forEach(function(li) {
       var data = (typeof parseOnclickData === 'function') ? parseOnclickData(li) : null;
       var textEl = li.querySelector('.ib-qname-text') || li.querySelector('span');
@@ -221,12 +294,18 @@ function autoFindDuplicates() {
       }
     });
 
-    console.log('[IB Auto-Dup] Harvesed ' + Object.keys(pageImgMap).length + ' image sets from current page.');
+    console.log('[IB Auto-Dup] Harvested ' + Object.keys(pageImgMap).length + ' image sets from current page DOM.');
 
     // 3. Build the pool: entries from background + harvested from current page
     var pool = [].concat(entries);
     Object.keys(pageImgMap).forEach(function(pName) {
-      if (!pool.some(function(e) { return e.question_name === pName; })) {
+      var existingIdx = pool.findIndex(function(e) { return e.question_name === pName; });
+      if (existingIdx !== -1) {
+        // V2 REFIX: If local cache has NO images but page HAS them, overwrite with page data
+        if ((!pool[existingIdx].question_imgs || pool[existingIdx].question_imgs.length === 0) && pageImgMap[pName].length > 0) {
+          pool[existingIdx].question_imgs = pageImgMap[pName];
+        }
+      } else {
         pool.push({
           question_name: pName,
           question_imgs: pageImgMap[pName],
@@ -254,11 +333,11 @@ function autoFindDuplicates() {
     Object.keys(buckets).forEach(function(key) {
       var bucket = buckets[key];
       if (bucket.length < 2) return;
-      // Rule: If strictly rejected by user before, skip
-      var rejKey = bucket.map(function(b) { return b.entry.question_name; }).sort().join('|');
-      if (window.IB.rejectedGroups && window.IB.rejectedGroups.indexOf(rejKey) !== -1) {
-        return;
-      }
+      var names = bucket.map(function(b) { return b.entry.question_name; });
+      var isRejected = (window.IB.rejectedGroups || []).some(function(rg) {
+        return (rg.questions || []).length === names.length && names.every(function(n) { return (rg.questions || []).includes(n); });
+      });
+      if (isRejected) return;
 
       // Check if ALL are already in the same existing group
       var names = bucket.map(function(b) { return b.entry.question_name; });
@@ -274,13 +353,23 @@ function autoFindDuplicates() {
     if (pendingPairs.length === 0) {
       console.log('[IB Auto-Dup] No new candidates to check.');
       _autoDupRunning = false;
+      if (isManual) showToast('No new duplicate candidates found on this page.', 'success');
       return;
     }
 
     var idx = 0;
+    var foundAny = false;
     function processNext() {
-      if (idx >= pendingPairs.length) { _autoDupRunning = false; return; }
+      if (idx >= pendingPairs.length) { 
+        _autoDupRunning = false; 
+        if (isManual) {
+          if (foundAny) showToast('✅ Rescan complete!', 'success');
+          else showToast('No new duplicates found on this page.', 'success');
+        }
+        return; 
+      }
       var bucket = pendingPairs[idx++];
+      // console.log('[IB Auto-Dup] Analyzing bucket ' + idx + '/' + pendingPairs.length + '...');
 
       // Pick first two that have images to compare
       var e1 = null, e2 = null;
@@ -310,13 +399,16 @@ function autoFindDuplicates() {
             id: 'dup_auto_' + allNames.sort().join('|'),
             questions: allNames,
             primary:   primary,
-            marked_by_user: false
+            status:    'ai',
+            urls:      {}
           };
-          var nameUrls = {};
-          allNames.forEach(function(n) { nameUrls[n] = window.location.href; });
+          allNames.forEach(function(n) { dupGroup.urls[n] = window.location.href; });
+          var nameUrls = dupGroup.urls;
 
           chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup, nameUrls: nameUrls }, function() {
+            foundAny = true;
             console.log('[IB] Auto-duplicate saved:', allNames.join(', '), '(' + Math.round(similarity * 100) + '% match, primary=' + primary + ')');
+            if (isManual) showToast('Found Duplicate: ' + allNames[0] + ' & ' + allNames[1], 'success');
             processNext();
           });
         } else {
@@ -382,7 +474,7 @@ function setupDupButtonObserver() {
 // ── Duplicate right sidebar ───────────────────────────────────────────────────
 
 // In-memory state for the current sidebar session
-var _iboGroup = { id: null, questions: [], primary: '', marked_by_user: true };
+var _iboGroup = { id: null, questions: [], primary: '', status: 'user' };
 var _iboAllEntries = [];  // filled once from background cache
 var _iboAllGroups  = [];  // filled once from background
 
@@ -419,14 +511,14 @@ function openDupSidebar(currentQName) {
         id:             existingGroup.id,
         questions:      existingGroup.questions.slice(),
         primary:        existingGroup.primary || existingGroup.questions[0] || '',
-        marked_by_user: existingGroup.marked_by_user !== false  // default true for existing user groups
+        status:         existingGroup.status || 'user'
       };
     } else {
       _iboGroup = {
         id:             'dup_' + Date.now(),
         questions:      currentQName ? [currentQName] : [],
         primary:        currentQName || '',
-        marked_by_user: true
+        status:         'user'
       };
     }
 
@@ -459,9 +551,9 @@ function buildDupSidebarContent() {
   if (!inner) return;
 
   var isExisting = _iboAllGroups.some(function(g) { return g.id === _iboGroup.id; });
-  var autoNote = (!_iboGroup.marked_by_user && isExisting)
+  var autoNote = (_iboGroup.status === 'ai' && isExisting)
     ? '<div class="ibo-existing-note">\uD83E\uDD16 Auto-detected by AI system</div>' : '';
-  var existingNote = (_iboGroup.marked_by_user && isExisting)
+  var existingNote = (_iboGroup.status !== 'ai' && isExisting)
     ? '<div class="ibo-existing-note">\u270F\uFE0F Marked by user</div>' : '';
 
   inner.innerHTML =
@@ -542,8 +634,10 @@ function buildDupSidebarContent() {
   var removeBtn = inner.querySelector('#ibo-remove-btn');
   if (removeBtn) {
     removeBtn.addEventListener('click', function() {
-      if (!confirm('Remove this duplicate group? All questions will lose their duplicate status.')) return;
-      chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: _iboGroup.id }, function() {
+      var isAi = (_iboGroup.status === 'ai');
+      var msg = isAi ? 'Permanently REJECT this AI-detected duplicate?' : 'Remove this duplicate group?';
+      if (!confirm(msg)) return;
+      chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: _iboGroup.id, reject: isAi }, function() {
         iboShowMsg('success', 'Group removed.');
         setTimeout(function() {
           closeDupSidebar();
@@ -687,6 +781,9 @@ function iboSave() {
   }
   if (!g.primary || g.questions.indexOf(g.primary) === -1) g.primary = g.questions[0];
 
+    _iboGroup.status = 'user';
+  g.status = 'user'; // V2 PURGE: Promote to user-verified on manual save
+
   // Exclusivity: check none of the questions are in other groups
   var conflicts = g.questions.filter(function(name) {
     return _iboAllGroups.some(function(eg) {
@@ -728,12 +825,12 @@ function iboSave() {
   var saveBtn = document.getElementById('ibo-save-btn');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving\u2026'; }
 
-  // Always mark as user-saved
   var groupToSave = {
     id:             g.id,
     questions:      g.questions,
     primary:        g.primary,
-    marked_by_user: true
+    status:         'user',
+    urls:           g.urls || {}
   };
 
   // Capture current URL and map it to the current question name if possible

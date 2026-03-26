@@ -39,11 +39,23 @@ async function syncFromFirestore(silent) {
   }
   if (syncBtn) { syncBtn.textContent = 'Syncing...'; syncBtn.disabled = true; }
   try {
-    var remote = await window.IB.fsReadAll();
-    window.IB.allEntries = window.IB.mergeEntries(remote, window.IB.allEntries);
+    var remoteEntries = await window.IB.fsReadAll();
+    window.IB.allEntries = window.IB.mergeEntries(remoteEntries, window.IB.allEntries);
     await window.IB.saveCache(window.IB.allEntries);
-    if (!silent) showMsg('success', 'Synced ' + remote.length + ' questions from Firestore.');
+    
+    var remoteDups = await window.IB.fsReadAllDupGroups();
+    // Merge duplicates: remote wins on ID match
+    var localDups = window.IB.duplicatesDB || [];
+    remoteDups.forEach(function(rg) {
+      var idx = localDups.findIndex(function(lg) { return lg.id === rg.id; });
+      if (idx !== -1) localDups[idx] = rg; else localDups.push(rg);
+    });
+    window.IB.duplicatesDB = localDups;
+    await window.IB.saveDuplicates(window.IB.duplicatesDB);
+
+    if (!silent) showMsg('success', 'Synced ' + remoteEntries.length + ' questions and ' + remoteDups.length + ' duplicates.');
     if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
+    if (document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
     if (document.getElementById('panel-favourites').classList.contains('active')) renderFavouritesPanel();
     if (document.getElementById('panel-today').classList.contains('active')) renderTodayPanel();
     if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
@@ -150,12 +162,43 @@ async function logAll() {
 // ── Export / Clear ────────────────────────────────────────────────────────────
 
 function exportJSON() {
-  if (window.IB.allEntries.length === 0) { showMsg('error', 'Nothing to export yet.'); return; }
+  if (window.IB.allEntries.length === 0 && (window.IB.duplicatesDB || []).length === 0) {
+    showMsg('error', 'Nothing to export yet.');
+    return;
+  }
+  
   var grouped = {};
-  window.IB.allEntries.forEach(function (e) { var s = e.subject || 'other'; if (!grouped[s]) grouped[s] = { PYQS: [] }; grouped[s].PYQS.push(e); });
+  
+  // 1. Group question entries
+  window.IB.allEntries.forEach(function (e) {
+    var s = e.subject || 'other';
+    if (!grouped[s]) grouped[s] = { PYQS: [], duplicates: [] };
+    grouped[s].PYQS.push(e);
+  });
+  
+  // 2. Group duplicate groups
+  var dups = window.IB.duplicatesDB || [];
+  dups.forEach(function (g) {
+    var firstQ = g.primary || (g.questions && g.questions[0]) || '';
+    var s = 'other';
+    var u = firstQ.toUpperCase();
+    if (u.includes('CHEMI')) s = 'chemistry';
+    else if (u.includes('PHYSI') || u.includes('PHYS')) s = 'physics';
+    else if (u.includes('MATH')) s = 'mathematics';
+    else if (u.includes('BIOL') || u.includes('BIO')) s = 'biology';
+    
+    if (!grouped[s]) grouped[s] = { PYQS: [], duplicates: [] };
+    if (!grouped[s].duplicates) grouped[s].duplicates = [];
+    grouped[s].duplicates.push(g);
+  });
+  
   var blob = new Blob([JSON.stringify(grouped, null, 2)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
-  var a = document.createElement('a'); a.href = url; a.download = 'ib_db_' + new Date().toISOString().split('T')[0] + '.json'; a.click(); URL.revokeObjectURL(url);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'ib_db_' + new Date().toISOString().split('T')[0] + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function clearAll() {
@@ -164,3 +207,30 @@ async function clearAll() {
   window.IB.allEntries = []; await window.IB.saveCache([]); await markDoneOnPage(); renderDBPanel();
   showMsg('success', 'All cleared.');
 }
+
+window.IB.startFullMigration = function(isManual) {
+  return new Promise(function(resolve) {
+    var screen = document.getElementById('migration-screen');
+    if (screen) screen.classList.add('active');
+
+    chrome.runtime.sendMessage({ action: 'runFullV2Migration' }, async function(res) {
+      // Refresh local cache and duplicates
+      window.IB.allEntries = await window.IB.loadCache();
+      window.IB.duplicatesDB = await window.IB.loadDuplicates();
+      
+      chrome.storage.local.set({ ib_v2_migrated: true }, function() {
+        if (screen) screen.classList.remove('active');
+        
+        // Refresh UI
+        if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
+        if (document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
+        if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
+        
+        if (isManual) {
+          showMsg('success', '\u2713 Migration complete. Data optimized and URLs discovered.');
+        }
+        resolve();
+      });
+    });
+  });
+};

@@ -217,8 +217,14 @@
     /* Dups panel */
     .dups-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .dups-count { font-size: 11px; color: #888; }
-    .dups-new-btn { padding: 5px 12px; background: #185FA5; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
-    .dups-new-btn:hover { background: #0C447C; }
+    .dups-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+    .dups-count { font-size: 11px; color: #888; font-weight: 600; }
+    .dups-toolbar-actions { display: flex; gap: 6px; }
+    .dups-new-btn, .dups-rescan-btn { border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 4px; }
+    .dups-new-btn { background: #E3F2FD; color: #185FA5; }
+    .dups-new-btn:hover { background: #BBDEFB; }
+    .dups-rescan-btn { background: #F3E5F5; color: #7B1FA2; }
+    .dups-rescan-btn:hover { background: #E1BEE7; }
     .dup-group-list { display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
     .dup-group-card { border: 1px solid #dce8f5; border-radius: 10px; overflow: hidden; background: #fff; flex-shrink: 0; }
     .dup-group-card-header { background: #EBF4FF; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #dce8f5; }
@@ -231,9 +237,26 @@
     .dup-group-other-name { font-size: 11px; color: #555; padding: 2px 0; display: flex; align-items: center; gap: 5px; }
     .dup-group-other-name::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #bbb; flex-shrink: 0; }
     .empty-dups { text-align: center; padding: 32px 16px; color: #aaa; font-size: 12px; line-height: 1.8; }
+
+    /* Migration Screen */
+    .migration-screen { display: none; position: fixed; inset: 0; background: #fff; z-index: 10000; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+    .migration-screen.active { display: flex; }
+    .migration-logo { font-size: 48px; margin-bottom: 20px; animation: pulse 2s infinite ease-in-out; }
+    .migration-title { font-size: 16px; font-weight: 700; color: #185FA5; margin-bottom: 8px; }
+    .migration-text { font-size: 13px; color: #666; line-height: 1.5; max-width: 300px; }
+    .migration-spinner { width: 30px; height: 30px; border: 3px solid #f3f3f3; border-top: 3px solid #185FA5; border-radius: 50%; animation: spin 1s linear infinite; margin-top: 24px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes pulse { 0% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0.6; transform: scale(1); } }
   </style>
 </head>
 <body>
+
+<div class="migration-screen" id="migration-screen">
+  <div class="migration-logo">🔗</div>
+  <div class="migration-title">Optimizing Database</div>
+  <div class="migration-text">We're upgrading your duplicate system to the new normalized architecture. This should only take a moment...</div>
+  <div class="migration-spinner"></div>
+</div>
 
 <div class="header">
   <div>
@@ -339,7 +362,10 @@
   <div class="panel" id="panel-dups">
     <div class="dups-toolbar">
       <span class="dups-count" id="dups-count">0 groups</span>
-      <button class="dups-new-btn" id="dups-new-btn">+ New Group</button>
+      <div class="dups-toolbar-actions">
+        <button class="dups-rescan-btn" id="dups-rescan-btn" title="Scan current page for duplicates (Pixel Engine)">🔍 Rescan Page</button>
+        <button class="dups-new-btn" id="dups-new-btn">+ New Group</button>
+      </div>
     </div>
     <div class="dup-group-list" id="dup-group-list">
       <div class="empty-dups">🔗 No duplicate groups yet.<br>Click "+ New Group" to mark questions as duplicates.</div>
@@ -414,6 +440,14 @@
     </div>
 
 
+
+    <div class="settings-section" style="margin-top:20px; border-top:1px solid #eee; padding-top:16px;">
+      <div class="settings-title">Database Maintenance</div>
+      <div class="settings-row">
+        <button class="db-action-btn" id="rerun-migration-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff;">↻ Re-run V2 Migration</button>
+        <div class="settings-hint">Forces a deep cleanup and URL discovery sweep.</div>
+      </div>
+    </div>
 
     <button class="save-settings-btn" id="save-settings-btn">Save &amp; verify</button>
     <div class="settings-saved" id="settings-saved">✓ Settings saved</div>

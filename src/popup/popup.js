@@ -62,6 +62,83 @@ document.addEventListener('DOMContentLoaded', async function () {
     window.IB.openDuplicateModal(currentQ);
   });
 
+  document.getElementById('dups-rescan-btn').addEventListener('click', async function() {
+    var btn = this;
+    var originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⌛ Scanning...';
+
+    console.log('[IB] Requesting rescan for active tab...');
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, function(tabs) {
+      var tab = tabs[0];
+      if (!tab) {
+        // Fallback to current window if lastFocused fails (rare)
+        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs2) {
+          processTab(tabs2[0]);
+        });
+      } else {
+        processTab(tab);
+      }
+    });
+
+    function processTab(target) {
+      if (!target) {
+        console.error('[IB] No active tab found.');
+        showMsg('error', 'Could not find an active tab.');
+        btn.disabled = false; btn.innerHTML = originalText;
+        return;
+      }
+      
+      console.log('[IB] Target Tab:', target.id, target.url);
+      if (!(target.url || '').includes('exam-mate.com')) {
+        showMsg('error', 'Please navigate to an ExamMate page to use the Pixel Engine.');
+        btn.disabled = false; btn.innerHTML = originalText;
+        return;
+      }
+      
+      // Phase 1: Ping handshake
+      var pingTimedOut = false;
+      var pingTimer = setTimeout(function() {
+        pingTimedOut = true;
+        console.error('[IB] Ping Handshake Timed Out.');
+        showMsg('error', 'Content script not responding. Refresh the page!');
+        btn.disabled = false; btn.innerHTML = originalText;
+      }, 1000);
+
+      chrome.tabs.sendMessage(target.id, { action: 'ping' }, function(response) {
+        if (pingTimedOut) return;
+        clearTimeout(pingTimer);
+
+        if (chrome.runtime.lastError || !(response && response.pong)) {
+          console.log('[IB] Ping Failed, attempting scripting fail-safe...');
+          // Fail-safe: Direct execution via chrome.scripting
+          chrome.scripting.executeScript({
+            target: { tabId: target.id },
+            func: () => {
+              if (window.IB && typeof window.IB.rescanPage === 'function') {
+                window.IB.rescanPage();
+              } else if (typeof autoFindDuplicates === 'function') {
+                autoFindDuplicates(true);
+              }
+            }
+          }, () => {
+            showMsg('success', 'Pixel scan initiated (via fail-safe)!');
+            setTimeout(() => { btn.disabled = false; btn.innerHTML = originalText; }, 1500);
+          });
+        } else {
+          console.log('[IB] Ping OK. Sending rescanDuplicates...');
+          chrome.tabs.sendMessage(target.id, { action: 'rescanDuplicates' }, function(res) {
+             showMsg('success', 'Pixel scan initiated! Check the ExamMate page for updates.');
+             setTimeout(function() {
+               btn.disabled = false;
+               btn.innerHTML = originalText;
+             }, 1500);
+          });
+        }
+      });
+    }
+  });
+
   // Init duplicate modal event wiring
   window.IB.initDuplicateModal();
 
@@ -87,12 +164,23 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
   document.getElementById('mode-local').addEventListener('click', function () { setMode('local'); });
   document.getElementById('mode-firebase').addEventListener('click', function () { setMode('firebase'); });
+  document.getElementById('rerun-migration-btn').addEventListener('click', async function() {
+    if (!confirm('Re-run the V2 migration? This will perform a deep cleanup and URL discovery sweep. Your duplicate groups will stay, but their data will be optimized.')) return;
+    await window.IB.startFullMigration(true);
+  });
 
   // Load cache, update sync btn state, populate settings
   window.IB.allEntries = await window.IB.loadCache();
   window.IB.duplicatesDB = await window.IB.loadDuplicates();
   updateSyncBtnState();
   populateSettingsUI();
+
+  // Check for V2 Migration
+  chrome.storage.local.get(['ib_v2_migrated'], async function(res) {
+    if (!res.ib_v2_migrated) {
+      await window.IB.startFullMigration();
+    }
+  });
 
   // Background sync
   syncFromFirestore(true);

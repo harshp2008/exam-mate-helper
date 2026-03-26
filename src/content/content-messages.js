@@ -150,6 +150,19 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return true;
   }
 
+  if (request.action === 'rescanDuplicates') {
+    if (window.IB && typeof window.IB.rescanWithReset === 'function') {
+      window.IB.rescanWithReset();
+      sendResponse({ started: true });
+    } else if (typeof autoFindDuplicates === 'function') {
+      autoFindDuplicates(true);
+      sendResponse({ started: true });
+    } else {
+      sendResponse({ started: false, error: 'rescanWithReset not found' });
+    }
+    return true;
+  }
+
   if (request.action === 'resetTodoCheckboxes') {
     // Called when Today page clears the queue — reset all sidebar checkboxes + in-memory sets
     ibCurrentTodoSet = new Set();

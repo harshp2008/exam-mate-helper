@@ -61,6 +61,23 @@ async function fsWriteDupGroup(settings, group) {
   if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed'); }
 }
 
+async function fsReadAllDupGroups(settings) {
+  var results = [], pt = null;
+  do {
+    var r = await fetch(dupListUrl(settings, pt));
+    if (!r.ok) { if (r.status === 404) break; var e = await r.json(); throw new Error('Read failed: ' + (e.error && e.error.message ? e.error.message : r.status)); }
+    var d = await r.json();
+    if (d.documents) d.documents.forEach(function (doc) { results.push(fromFS(doc)); });
+    pt = d.nextPageToken || null;
+  } while (pt);
+  return results;
+}
+
+async function fsDeleteDupGroup(settings, groupId) {
+  var r = await fetch(dupGroupUrl(settings, groupId), { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
+}
+
 async function fsDelete(settings, subject, qname) {
   var r = await fetch(qDocUrl(settings, subject, qname), { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');

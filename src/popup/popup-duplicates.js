@@ -27,7 +27,7 @@ window.IB.openDuplicateModal = function(target) {
       id: existing.id, 
       questions: (existing.questions || []).slice(), 
       primary: existing.primary || existing.questions[0] || '',
-      marked_by_user: existing.marked_by_user
+      status: existing.status || 'user'
     };
   } else {
     // Start fresh with the current question (if provided) or empty
@@ -36,7 +36,7 @@ window.IB.openDuplicateModal = function(target) {
       id: newId, 
       questions: target ? [target] : [], 
       primary: target || '',
-      marked_by_user: true // Manual groups are marked by user
+      status: 'user'
     };
   }
 
@@ -165,7 +165,7 @@ window.IB.saveDuplicateGroup = async function() {
   var listEl = document.getElementById('dup-reset-list');
 
   // Promote to user-verified if manually saved
-  group.marked_by_user = true;
+  group.status = 'user';
 
   // 1. VIOLATION CHECK: Find non-primary questions that already have data
   var violations = (group.questions || []).filter(function(name) {
@@ -211,8 +211,11 @@ window.IB.saveDuplicateGroup = async function() {
   var saveBtn = document.getElementById('dup-save-btn');
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving...';
-
   try {
+    // Promote to user-verified if manually saved
+    group.status = 'user';
+    if (!group.urls) group.urls = {};
+
     // Update local duplicatesDB
     var db = window.IB.duplicatesDB || [];
     var idx = db.findIndex(function(g) { return g.id === group.id; });
@@ -225,7 +228,11 @@ window.IB.saveDuplicateGroup = async function() {
         var currentUrl = (tabs[0] && tabs[0].url) || '';
         var nameMap = {};
         if (currentUrl && currentUrl.indexOf('exam-mate.com') !== -1) {
-          (group.questions || []).forEach(function(n) { nameMap[n] = currentUrl; });
+          (group.questions || []).forEach(function(n) { 
+            nameMap[n] = currentUrl;
+            // Also store URL directly in group if shared
+            group.urls[n] = currentUrl;
+          });
         }
         
         chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: group, nameUrls: nameMap }, function(res) {
@@ -235,7 +242,7 @@ window.IB.saveDuplicateGroup = async function() {
       });
     });
 
-    // Reload local cache so repeated_question shows in panels
+    // Reload local cache so the UI reflects the new V2 status and grouping
     window.IB.allEntries = await window.IB.loadCache();
     window.IB.duplicatesDB = await window.IB.loadDuplicates();
 

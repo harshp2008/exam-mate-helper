@@ -351,7 +351,8 @@ function showFavMsg(type, text) {
 // ── Dups panel ────────────────────────────────────────────────────────────────
 
 function renderDupsPanel() {
-  var groups = window.IB.duplicatesDB || [];
+  var allGroups = window.IB.duplicatesDB || [];
+  var groups = allGroups.filter(function(g) { return g.status !== 'ai-rejected'; });
   var countEl = document.getElementById('dups-count');
   var listEl = document.getElementById('dup-group-list');
   if (!listEl) return;
@@ -363,33 +364,42 @@ function renderDupsPanel() {
     return;
   }
 
-  listEl.innerHTML = groups.map(function(g, gi) {
+  listEl.innerHTML = groups.map(function(g) {
+    var gi = allGroups.indexOf(g);
     var qList = g.questions || [];
     var primary = g.primary || qList[0] || '—';
     var others = qList.filter(function(n) { return n !== primary; });
-    var byUser = g.marked_by_user !== false;
-    var srcBadge = byUser
+    
+    var status = g.status || 'user';
+    var isAi = status === 'ai';
+    var srcBadge = !isAi
       ? '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#E1F5EE;color:#0F6E56;margin-left:6px;font-weight:600;">\u270F\uFE0F User</span>'
       : '<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:#EDE7F6;color:#512DA8;margin-left:6px;font-weight:600;">\uD83E\uDD16 AI</span>';
+
     var findUrl = function(name, groupQuestions) {
-      // 1. Direct match
+      // 1. New V2 Source of Truth: Group URL map
+      if (g.urls && g.urls[name]) return g.urls[name];
+      
+      // 2. Fallback: Direct match in cache
       var ex = window.IB.allEntries.find(function(e) { return e.question_name === name; });
       if (ex && ex.source_url && ex.source_url !== 'undefined') return ex.source_url;
       
-      // 2. Fallback: Any question in the same group that has a URL
+      // 3. Fallback: Any question in the same group that has a URL
       if (groupQuestions) {
         for (var i = 0; i < groupQuestions.length; i++) {
-          var other = window.IB.allEntries.find(function(e) { return e.question_name === groupQuestions[i]; });
-          if (other && other.source_url && other.source_url !== 'undefined') return other.source_url;
+          var otherName = groupQuestions[i];
+          if (g.urls && g.urls[otherName]) return g.urls[otherName];
+          var otherEntry = window.IB.allEntries.find(function(e) { return e.question_name === otherName; });
+          if (otherEntry && otherEntry.source_url && otherEntry.source_url !== 'undefined') return otherEntry.source_url;
         }
       }
-      // 3. Last resort: Generate a search URL on ExamMate
+      
+      // 4. Last resort: Generate a search URL on ExamMate
       var u = name.toUpperCase();
       var sId = u.includes('CHEMI') ? '7' : u.includes('PHYSI') || u.includes('PHYS') ? '92' : u.includes('MATH') ? '102' : u.includes('BIOL') || u.includes('BIO') ? '93' : '';
       if (sId) {
         return 'https://www.exam-mate.com/topicalpastpapers?subject=' + sId + '&search=' + encodeURIComponent(name);
       }
-      
       return '';
     };
 
@@ -398,7 +408,7 @@ function renderDupsPanel() {
         '<span class="dup-group-primary-label">\u2605 Primary' + srcBadge + '</span>' +
         '<div style="display:flex;gap:5px;">' +
           '<button class="dup-group-edit-btn" data-gidx="' + gi + '">Edit</button>' +
-          '<button class="dup-group-del-btn" data-gid="' + (g.id || '') + '" title="Remove duplicate group" style="background:none;border:1px solid #f5c6c6;border-radius:5px;color:#A32D2D;cursor:pointer;padding:2px 7px;font-size:11px;">\uD83D\uDDD1</button>' +
+          '<button class="dup-group-del-btn" data-gid="' + (g.id || '') + '" data-is-ai="' + (isAi?'1':'0') + '" title="Remove duplicate group" style="background:none;border:1px solid #f5c6c6;border-radius:5px;color:#A32D2D;cursor:pointer;padding:2px 7px;font-size:11px;">\uD83D\uDDD1</button>' +
         '</div>' +
       '</div>' +
       '<div class="dup-group-primary-name ib-nav-link" data-qname="' + primary + '" data-url="' + findUrl(primary, qList) + '" data-open-dups="1" style="cursor:pointer; color:#185FA5;">' + primary + '</div>' +
@@ -424,17 +434,24 @@ function renderDupsPanel() {
   listEl.querySelectorAll('.dup-group-del-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var gid = this.getAttribute('data-gid');
+      var isAi = this.getAttribute('data-is-ai') === '1';
       if (!gid) return;
-      if (!confirm('Remove this duplicate group? All questions will lose their duplicate status.')) return;
-      chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: gid }, function() {
-        // Refresh the dups panel
-        chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
-          if (res && res.groups) {
-            window.IB.duplicatesDB = res.groups;
-            renderDupsPanel();
-          }
+
+      if (isAi) {
+        if (!confirm('Permanently REJECT this AI-detected duplicate?')) return;
+        chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: gid, reject: true }, function() {
+          chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
+            if (res && res.groups) { window.IB.duplicatesDB = res.groups; renderDupsPanel(); }
+          });
         });
-      });
+      } else {
+        if (!confirm('Remove this duplicate group?')) return;
+        chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: gid, reject: false }, function() {
+          chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
+            if (res && res.groups) { window.IB.duplicatesDB = res.groups; renderDupsPanel(); }
+          });
+        });
+      }
     });
   });
 }
@@ -443,7 +460,7 @@ function renderDupsPanel() {
 function renderDBPanel() {
   // Non-primary duplicates are excluded from all counts and the list
   function isNonPrimaryDup(e) {
-    return e.repeated_question && e.repeated_question.is_primary === false;
+    return !!window.IB.isNonPrimaryDuplicate(e.question_name);
   }
   var visibleEntries = window.IB.allEntries.filter(function(e) { return !isNonPrimaryDup(e); });
   var completedEntries = visibleEntries.filter(function(e) { return e.logged_at; });
@@ -458,7 +475,7 @@ function renderDBPanel() {
 
 function renderEntryList() {
   function isNonPrimaryDup(e) {
-    return e.repeated_question && e.repeated_question.is_primary === false;
+    return !!window.IB.isNonPrimaryDuplicate(e.question_name);
   }
 
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
@@ -505,7 +522,7 @@ function renderEntryList() {
       var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
       var isTodo = e.todo_date === today;
       var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
-      var isPrimaryDup = e.repeated_question && e.repeated_question.is_primary === true;
+      var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
       var dupBadge = isPrimaryDup ? '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#E6F1FB;color:#185FA5;margin-left:4px;font-weight:600;">🔗 primary</span>' : '';
       var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
       var aCount = (e.answer_imgs || []).length;
