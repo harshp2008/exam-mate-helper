@@ -5,7 +5,7 @@ window.IB = window.IB || {};
 window.IB.CACHE_KEY = 'ib_question_cache';
 window.IB.SETTINGS_KEY = 'ib_settings';
 window.IB.DUPLICATES_KEY = 'ib_duplicates_cache';
-window.IB.KNOWN_SUBJECTS = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
+window.IB.KNOWN_SUBJECTS = ['biology', 'chemistry', 'physics', 'economics', 'glo_pol', 'philosophy', 'psychology', 'religions', 'mathematics', 'other'];
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 

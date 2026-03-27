@@ -503,43 +503,105 @@ function renderEntryList() {
     groups[s].push(e);
   });
 
-  var SUBJECT_ORDER = ['chemistry', 'physics', 'mathematics', 'biology', 'other'];
-  var SUBJECT_LABELS = { chemistry: '⚗ Chemistry', physics: '⚛ Physics', mathematics: '∑ Mathematics', biology: '🌿 Biology', other: '📚 Other' };
-  var SUBJECT_COLORS = { chemistry: '#0F6E56', physics: '#185FA5', mathematics: '#6A1B9A', biology: '#2E7D32', other: '#555' };
+  var SUBJECT_ORDER = ['biology', 'chemistry', 'physics', 'economics', 'glo_pol', 'philosophy', 'psychology', 'religions', 'mathematics', 'other'];
+  var SUBJECT_LABELS = { 
+    biology: '🌿 Biology', 
+    chemistry: '⚗ Chemistry', 
+    physics: '⚛ Physics', 
+    economics: '📈 Economics',
+    glo_pol: '⚖ Global Politics',
+    philosophy: '📜 Philosophy',
+    psychology: '🧠 Psychology',
+    religions: '🕊 World Religions',
+    mathematics: '∑ Mathematics', 
+    other: '📚 Other' 
+  };
+  var SUBJECT_COLORS = { 
+    biology: '#2E7D32', 
+    chemistry: '#00897B', 
+    physics: '#1565C0', 
+    economics: '#E65100',
+    glo_pol: '#1B5E20',
+    philosophy: '#4E342E',
+    psychology: '#AD1457',
+    religions: '#F9A825',
+    mathematics: '#6A1B9A', 
+    other: '#555' 
+  };
 
   var allSubjects = Object.keys(groups).sort(function(a, b) {
     var ia = SUBJECT_ORDER.indexOf(a), ib = SUBJECT_ORDER.indexOf(b);
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
 
+  // Helper to extract the code from question_name (handles M21-BIOLO..., MathAA/33..., MAT/20...)
+  function extractSubjectCode(name) {
+    if (!name) return 'other';
+    var parts = name.split(/[-/]/);
+    if (parts.length === 0) return 'other';
+    
+    var first = parts[0].trim();
+    // If first part is a year/session prefix (e.g. M21, N19, 2025), the code is the second part
+    if (parts.length > 1 && (/^[MN]\d{2}$/i.test(first) || /^\d{4}$/.test(first))) {
+      return parts[1].trim();
+    }
+    return first;
+  }
+
   var html = '';
   allSubjects.forEach(function(subj) {
     var entries = groups[subj];
+    // Sort entries within the subject group by their actual course code to keep variations together
+    entries.sort(function(a, b) {
+      var codeA = extractSubjectCode(a.question_name), codeB = extractSubjectCode(b.question_name);
+      if (codeA !== codeB) return codeA.localeCompare(codeB);
+      return (b.logged_at || '').localeCompare(a.logged_at || ''); // then by date
+    });
+
     var label = SUBJECT_LABELS[subj] || subj;
     var color = SUBJECT_COLORS[subj] || '#555';
     html += '<div class="db-subject-heading" style="color:' + color + ';">' + label + '<span class="db-subject-count">' + entries.length + '</span></div>';
-    entries.forEach(function(e) {
+    
+    var lastCode = null;
+    entries.forEach(function(e, idx) {
+      var currentCode = extractSubjectCode(e.question_name);
+      
+      // Look ahead to check if the NEXT item will trigger a divider
+      var nextEntry = entries[idx + 1];
+      var nextCode = nextEntry ? extractSubjectCode(nextEntry.question_name) : null;
+      var isFollowedByDivider = nextCode && nextCode !== currentCode;
+      
+      // Inject the small divider when the syllabus/code changes within the same parent
+      var dividerHtml = '';
+      if (lastCode && currentCode !== lastCode) {
+        dividerHtml = '<div class="db-sub-divider"></div>';
+      }
+      lastCode = currentCode;
+
       var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
       var isTodo = e.todo_date === today;
       var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
       var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
       var dupBadge = isPrimaryDup ? '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#E6F1FB;color:#185FA5;margin-left:4px;font-weight:600;">🔗 primary</span>' : '';
       var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
+      var qCount = (e.question_imgs || []).length;
+      var qLabel = qCount > 0 ? qCount + 'Q' : '<span style="color:#D32F2F;font-weight:700;">0Q</span>';
       var aCount = (e.answer_imgs || []).length;
       var aStr;
       if (aCount > 0) {
         aStr = aCount + 'A';
       } else if (e.mcq_answer) {
         aStr = '1A';
-      } else if (e.mcq_answer === null) {
-        aStr = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
       } else {
-        aStr = '0A';
+        // Red warning if no images OR no MCQ answer
+        aStr = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
       }
-      html += '<div class="entry-item">' +
+
+      html += dividerHtml + 
+        '<div class="entry-item' + (isFollowedByDivider ? ' no-border' : '') + '">' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + dupBadge + '</div>' +
-          '<div class="entry-meta">' + (e.question_imgs || []).length + 'Q ' + aStr + ' · ' + timeStr + '</div>' +
+          '<div class="entry-meta">' + currentCode + ' · ' + qLabel + ' ' + aStr + ' · ' + timeStr + '</div>' +
         '</div>' +
         '<button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button>' +
       '</div>';

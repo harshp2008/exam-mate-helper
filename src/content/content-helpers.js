@@ -2,10 +2,25 @@
 
 function inferSubject(name) {
   var upper = (name || '').toUpperCase();
-  if (upper.includes('CHEMI')) return 'chemistry';
-  if (upper.includes('PHYSI') || upper.includes('PHYS')) return 'physics';
-  if (upper.includes('MATH') || upper.includes('MATHS')) return 'mathematics';
-  if (upper.includes('BIOL') || upper.includes('BIO')) return 'biology';
+  
+  // Mathematics Group
+  if (upper.includes('MATHAA') || upper.includes('MATHAI') || upper.includes('MATSD') || 
+      upper.includes('FURMA') || upper.includes('MAT-') || upper.includes('MAT/') || upper.includes('MATHS')) {
+    return 'mathematics';
+  }
+  
+  // Sciences
+  if (upper.includes('CHEMI') || upper.includes('CHEM2025')) return 'chemistry';
+  if (upper.includes('PHYSI') || upper.includes('PHYS') || upper.includes('PHY2025')) return 'physics';
+  if (upper.includes('BIOLO') || upper.includes('BIOL') || upper.includes('BIO') || upper.includes('BIO2025')) return 'biology';
+  
+  // Humanities & Others
+  if (upper.includes('ECONO')) return 'economics';
+  if (upper.includes('GLPOL')) return 'glo_pol';
+  if (upper.includes('PHILO')) return 'philosophy';
+  if (upper.includes('PSYCH')) return 'psychology';
+  if (upper.includes('WLDRE')) return 'religions';
+
   return 'other';
 }
 
@@ -23,12 +38,29 @@ function parseOnclickData(li) {
     var s = attr.indexOf('{'), e = attr.lastIndexOf('}');
     if (s !== -1 && e !== -1) {
       try {
-        var raw = attr.slice(s, e + 1).replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\\\\\\\\\\//g, '/');
+        var raw = attr.slice(s, e + 1)
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&')
+          .replace(/\\\\+/g, '/') // Handle escaped slashes or backslashes
+          .replace(/\\+"/g, '"'); // Handle escaped quotes
+
         var parsed = JSON.parse(raw);
-        if (parsed && (parsed.question_images || parsed.answer_images || parsed.question_id || parsed.id)) {
-           return parsed;
+        if (parsed) {
+          // Normalize common ExamMate field variations
+          if (!parsed.question_images && parsed.q_images) parsed.question_images = parsed.q_images;
+          if (!parsed.answer_images && parsed.a_images) parsed.answer_images = parsed.a_images;
+          
+          if (parsed.question_images || parsed.answer_images || parsed.question_id || parsed.id) {
+            return parsed;
+          }
         }
-      } catch (ex) {}
+      } catch (ex) {
+        // Fallback: Try a more conservative grep for the JSON block if the first attempt failed
+        var match = attr.match(/\{"question_id":.*?\}/);
+        if (match) {
+           try { return JSON.parse(match[0]); } catch(e2) {}
+        }
+      }
     }
   }
   return null;
