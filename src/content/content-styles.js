@@ -258,6 +258,6 @@ function injectHighPriorityCSS() {
 
   var style = document.createElement('style');
   style.id = ID;
-  style.textContent = 'img.img-fluid:last-child { padding-bottom: 100px !important; }';
+  style.textContent = '#question-image-box-1 > div > img { padding-bottom: 100px !important; }';
   document.head.appendChild(style);
 }
