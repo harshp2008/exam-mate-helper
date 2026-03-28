@@ -447,8 +447,12 @@ function renderDupsPanel() {
       } else {
         if (!confirm('Remove this duplicate group?')) return;
         chrome.runtime.sendMessage({ action: 'removeDuplicateGroup', groupId: gid, reject: false }, function() {
-          chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
-            if (res && res.groups) { window.IB.duplicatesDB = res.groups; renderDupsPanel(); }
+          chrome.runtime.sendMessage({ action: 'getDupData' }, async function(res) {
+            if (res && res.groups) { 
+              window.IB.duplicatesDB = res.groups; 
+              if (typeof markDoneOnPage === 'function') await markDoneOnPage();
+              renderDupsPanel(); 
+            }
           });
         });
       }

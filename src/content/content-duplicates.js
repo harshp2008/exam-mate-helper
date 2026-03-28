@@ -19,8 +19,8 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   }
 });
 
-var IB_DUP_TOLERANCE = 0.90; // Similarity threshold (0-1) for auto-detection
-var IB_COMPARE_RES    = 600;  // Max resolution for pixel-level comparison
+var IB_DUP_TOLERANCE = 0.96; // Similarity threshold (0-1) for auto-detection
+var IB_COMPARE_RES    = 800;  // Balanced high resolution (reduced from 1200 to prevent freezing)
 
 // ── IB Name parser ────────────────────────────────────────────────────────────
 
@@ -31,10 +31,40 @@ var IB_COMPARE_RES    = 600;  // Max resolution for pixel-level comparison
  * Returns null if name doesn't match the expected pattern.
  */
 function parseIBName(name) {
-  // Relaxed regex to handle slashes or dashes, and more flexible "rest" part
-  var m = (name || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?(.+)$/i);
-  if (!m) return null;
-  return { subject: m[1].toUpperCase(), paper: m[2], tz: parseInt(m[3], 10), rest: m[4] };
+  // Format: SUBJECT/PaperTz_Level_Season_Year_Qnum
+  // e.g. PHYSI/22_HL_Summer_2021_Q1
+  // Regex Breakdown:
+  // 1: Subject (PHYSI)
+  // 2: Paper (2)
+  // 3: Timezone (2)
+  // 4: Level (SL or HL or MATSD etc)
+  // 5: Season (Summer or Winter)
+  // 6: Year (2021)
+  // 7: QNum (1)
+  var m = (name || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?([A-Z0-9]+)_([A-Za-z]+)_(\d{4})_Q?(\d+)$/i);
+  if (m) {
+    return {
+      subject: m[1].toUpperCase(),
+      paper: m[2],
+      tz: parseInt(m[3], 10),
+      level: m[4].toUpperCase(),
+      season: m[5].toLowerCase(),
+      year: m[6],
+      qNum: m[7],
+      isDetailed: true
+    };
+  }
+  
+  // Relaxed fallback
+  var fallback = (name || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?(.+)$/i);
+  if (!fallback) return null;
+  return { 
+    subject: fallback[1].toUpperCase(), 
+    paper: fallback[2], 
+    tz: parseInt(fallback[3], 10), 
+    rest: fallback[4],
+    isDetailed: false
+  };
 }
 
 /**
@@ -45,25 +75,34 @@ function trimImage(img, W, H) {
   var data = img.data;
   var top = 0, bottom = H - 1, left = 0, right = W - 1;
 
-  // Threshold for "white" (considering some noise/grayish backgrounds)
-  var isWhite = function(x, y) {
-    var idx = (y * W + x) * 4;
-    return data[idx] > 240 && data[idx+1] > 240 && data[idx+2] > 240;
+  var isRowWhite = function(y) {
+    for (var x = 0; x < W; x++) {
+      var i = (y * W + x) * 4;
+      if (data[i] < 240 || data[i+1] < 240 || data[i+2] < 240) return false;
+    }
+    return true;
+  };
+  var isColWhite = function(x) {
+    for (var y = 0; y < H; y++) {
+      var i = (y * W + x) * 4;
+      if (data[i] < 240 || data[i+1] < 240 || data[i+2] < 240) return false;
+    }
+    return true;
   };
 
-  while (top < H && Array.from({length: W}, (_, x) => isWhite(x, top)).every(v => v)) top++;
-  while (bottom > top && Array.from({length: W}, (_, x) => isWhite(x, bottom)).every(v => v)) bottom--;
-  while (left < W && Array.from({length: H}, (_, y) => isWhite(left, y)).every(v => v)) left++;
-  while (right > left && Array.from({length: H}, (_, y) => isWhite(right, y)).every(v => v)) right--;
+  while (top < H && isRowWhite(top)) top++;
+  while (bottom > top && isRowWhite(bottom)) bottom--;
+  while (left < W && isColWhite(left)) left++;
+  while (right > left && isColWhite(right)) right--;
 
   var newW = right - left + 1;
   var newH = bottom - top + 1;
-  if (newW <= 0 || newH <= 0) return null;
+  if (newW <= 5 || newH <= 5) return null; // Too small to be a question content
 
   var canvas = document.createElement('canvas');
   canvas.width = newW; canvas.height = newH;
   var ctx = canvas.getContext('2d');
-  ctx.putImageData(img, -left, -top);
+  ctx.putImageData(img, -left, -top, left, top, newW, newH);
   return canvas;
 }
 
@@ -72,7 +111,7 @@ function trimImage(img, W, H) {
  * Resizes to 17x16 to produce a 256-bit (16x16) hash.
  */
 function computeDHash(imageSource) {
-  var size = 16;
+  var size = 32; // Upgrade to 32x32 (1024-bit) for superior precision
   var canvas = document.createElement('canvas');
   canvas.width = size + 1; canvas.height = size;
   var ctx = canvas.getContext('2d');
@@ -101,48 +140,39 @@ function getHammingDistance(h1, h2) {
   return dist;
 }
 
+
 /**
  * Computes average pixel-level similarity (0–1) across ALL image pairs.
  * Loads images at native resolution. Does NOT set crossOrigin (same-origin CDN).
  * Uses willReadFrequently:true to suppress the console warning.
  */
-function compareAllImages(imgs1, imgs2) {
-  if (!imgs1 || !imgs2 || imgs1.length === 0 || imgs2.length === 0) return Promise.resolve(0);
-  
-  // Rule 1: Different number of images = different questions
-  if (imgs1.length !== imgs2.length) return Promise.resolve(0);
-
   function loadImg(url) {
+    if (!url) return Promise.reject(new Error('null_url'));
     return new Promise(function(res, rej) {
       var img = new Image();
       img.onload = function() { res(img); };
-      img.onerror = function() { rej(new Error('load')); };
-      img.src = url + (url.includes('?') ? '&' : '?') + '_nc=' + Date.now();
+      img.onerror = function() { rej(new Error('load_failed')); };
+      img.src = url; 
     });
   }
+
+function compareAllImages(imgs1, imgs2) {
+  if (!imgs1 || !imgs2 || imgs1.length !== imgs2.length || imgs1.length === 0) return Promise.resolve(0);
 
   function comparePair(url1, url2) {
     return Promise.all([loadImg(url1), loadImg(url2)]).then(function(imgs) {
       var img1 = imgs[0], img2 = imgs[1];
       
-      // 1. Pre-process: Trim white borders to align core content
-      var W1 = img1.naturalWidth || img1.width || 1;
-      var H1 = img1.naturalHeight || img1.height || 1;
-      var W2 = img2.naturalWidth || img2.width || 1;
-      var H2 = img2.naturalHeight || img2.height || 1;
+      // 1. Pre-process: Trim edges to align core content
+      var W1 = img1.naturalWidth || img1.width || 1, H1 = img1.naturalHeight || img1.height || 1;
+      var cTmp1 = document.createElement('canvas'); cTmp1.width = W1; cTmp1.height = H1;
+      var ctx1 = cTmp1.getContext('2d', { willReadFrequently: true }); ctx1.drawImage(img1, 0, 0);
+      var trimmed1 = trimImage(ctx1.getImageData(0, 0, W1, H1), W1, H1) || img1;
 
-      // Extract raw data for trimming
-      var cTmp1 = document.createElement('canvas');
-      cTmp1.width = W1; cTmp1.height = H1;
-      var ctxTmp1 = cTmp1.getContext('2d', { willReadFrequently: true });
-      ctxTmp1.drawImage(img1, 0, 0);
-      var trimmed1 = trimImage(ctxTmp1.getImageData(0, 0, W1, H1), W1, H1) || img1;
-
-      var cTmp2 = document.createElement('canvas');
-      cTmp2.width = W2; cTmp2.height = H2;
-      var ctxTmp2 = cTmp2.getContext('2d', { willReadFrequently: true });
-      ctxTmp2.drawImage(img2, 0, 0);
-      var trimmed2 = trimImage(ctxTmp2.getImageData(0, 0, W2, H2), W2, H2) || img2;
+      var W2 = img2.naturalWidth || img2.width || 1, H2 = img2.naturalHeight || img2.height || 1;
+      var cTmp2 = document.createElement('canvas'); cTmp2.width = W2; cTmp2.height = H2;
+      var ctx2 = cTmp2.getContext('2d', { willReadFrequently: true }); ctx2.drawImage(img2, 0, 0);
+      var trimmed2 = trimImage(ctx2.getImageData(0, 0, W2, H2), W2, H2) || img2;
 
       // 2. Perform Perceptual Hash comparison (on trimmed content)
       var hash1 = computeDHash(trimmed1);
@@ -150,45 +180,47 @@ function compareAllImages(imgs1, imgs2) {
       var hDist = getHammingDistance(hash1, hash2);
       var hashSim = 1 - (hDist / hash1.length);
 
-      // If hashes are extremely similar, we are very confident
+      // Early exit for near-identical hashes
       if (hashSim > 0.98) return hashSim;
 
-      // 3. Fallback: Pixelmatch on aligned/trimmed content
+      // 3. Fallback: Structural Pixelmatch with Micro-Alignment Shift
       var TW1 = trimmed1.width, TH1 = trimmed1.height;
       var TW2 = trimmed2.width, TH2 = trimmed2.height;
-      
       var W = Math.min(TW1, TW2), H = Math.min(TH1, TH2);
       if (W > IB_COMPARE_RES) { H = Math.round(H * IB_COMPARE_RES / W); W = IB_COMPARE_RES; }
       if (H > IB_COMPARE_RES) { W = Math.round(W * IB_COMPARE_RES / H); H = IB_COMPARE_RES; }
 
-      var canvas1 = document.createElement('canvas');
-      canvas1.width = W; canvas1.height = H;
-      var ctx1 = canvas1.getContext('2d', { willReadFrequently: true });
-      ctx1.drawImage(trimmed1, 0, 0, W, H);
-      var d1 = ctx1.getImageData(0, 0, W, H);
+      function getMatchScore(dy) {
+        var c1 = document.createElement('canvas'); c1.width = W; c1.height = H;
+        var cx1 = c1.getContext('2d', { willReadFrequently: true });
+        cx1.drawImage(trimmed1, 0, Math.max(0, dy), TW1, TH1 - Math.abs(dy), 0, 0, W, H);
+        
+        var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+        var cx2 = c2.getContext('2d', { willReadFrequently: true });
+        cx2.drawImage(trimmed2, 0, Math.max(0, -dy), TW2, TH2 - Math.abs(dy), 0, 0, W, H);
+        
+        var d1 = cx1.getImageData(0, 0, W, H), d2 = cx2.getImageData(0, 0, W, H);
+        var mismatch = pixelmatch(d1.data, d2.data, null, W, H, { threshold: 0.1 });
+        return 1 - (mismatch / (W * H));
+      }
 
-      var canvas2 = document.createElement('canvas');
-      canvas2.width = W; canvas2.height = H;
-      var ctx2 = canvas2.getContext('2d', { willReadFrequently: true });
-      ctx2.drawImage(trimmed2, 0, 0, W, H);
-      var d2 = ctx2.getImageData(0, 0, W, H);
+      var baseScore = getMatchScore(0);
+      if (baseScore > 0.97 || baseScore < 0.75) return Math.max(baseScore, hashSim);
 
-      var mismatchedPixels = pixelmatch(d1.data, d2.data, null, W, H, { 
-        threshold: 0.15, 
-        includeAA: true 
-      });
-
-      var pixelSim = 1 - (mismatchedPixels / (W * H));
-      var finalScore = Math.max(hashSim, pixelSim);
-      
-      // Lenient size penalty
-      var sizeDiff = Math.abs(TW1*TH1 - TW2*TH2) / Math.max(TW1*TH1, TW2*TH2);
-      if (sizeDiff > 0.3) finalScore *= 0.9;
-
-      return finalScore;
-    }).catch(function(err) { 
-      console.error('[IB Auto-Dup] Comparison error:', err);
-      return -1; 
+      // Alignment Shift: Try sliding images vertically to find better overlap (+/- 5px)
+      var bestScore = baseScore;
+      var searchPoints = [-5, -3, -1, 1, 3, 5];
+      for (var s = 0; s < searchPoints.length; s++) {
+        var shifted = getMatchScore(searchPoints[s]);
+        if (shifted > bestScore) {
+          bestScore = shifted;
+          if (bestScore > 0.97) break;
+        }
+      }
+      return Math.max(bestScore, hashSim);
+    }).catch(function(err) {
+      console.error('[IB Auto-Dup] Pair error:', err);
+      return 0;
     });
   }
 
@@ -199,10 +231,8 @@ function compareAllImages(imgs1, imgs2) {
 
   return Promise.all(pairs).then(function(scores) {
     if (scores.length === 0) return 0;
-    // ALL pairs must be valid and meet a minimum threshold
     var minScore = Math.min.apply(null, scores);
-    if (minScore < 0) return 0; 
-    return minScore; // Strictly controlled by the weakest matching pair
+    return minScore < 0 ? 0 : minScore;
   });
 }
 
@@ -264,159 +294,215 @@ window.IB.rescanWithReset = function() {
 
 function startScanInternal(isManual) {
     console.log('[IB Auto-Dup] Starting Pixel Scan...');
-    chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
-      if (chrome.runtime.lastError || !res) { 
-        _autoDupRunning = false; 
-        if (isManual && typeof showToast === 'function') showToast('Scan failed: No data from background.', 'error');
-        return; 
-      }
-
-    var entries = res.entries || [];
-    var existingGroups = res.groups || [];
-
-    // Build a set of question names already in any group
-    var alreadyGrouped = new Set();
-    existingGroups.forEach(function(g) {
-      (g.questions || []).forEach(function(n) { alreadyGrouped.add(n); });
-    });
-
-    var pageImgMap = {};  // name → [imgUrls]
-    var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"], .ib-question-item');
-    console.log('[IB Auto-Dup] Harvesting from ' + pageItems.length + ' page items...');
     
-    pageItems.forEach(function(li) {
-      var data = (typeof parseOnclickData === 'function') ? parseOnclickData(li) : null;
-      var textEl = li.querySelector('.ib-qname-text') || li.querySelector('span');
-      var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
-      
-      if (realName && data && data.question_images && data.question_images.length > 0) {
-        pageImgMap[realName] = data.question_images;
+    // V2 REFIX: Load settings for primary-selection preferences
+    chrome.storage.local.get(['ib_settings', 'ib_duplicates_cache'], async function(res) {
+      if (chrome.runtime.lastError || !res) { 
+        _autoDupRunning = false; return; 
       }
-    });
+      var settings = res.ib_settings || {};
+      var dupPrefs = settings.dupPrefs || {};
 
-    console.log('[IB Auto-Dup] Harvested ' + Object.keys(pageImgMap).length + ' image sets from current page DOM.');
+      chrome.runtime.sendMessage({ action: 'getDupData' }, async function(res2) {
+        if (!res2) { _autoDupRunning = false; return; }
+        var entries = res2.entries || [];
+        var existingGroups = res2.groups || [];
 
-    // 3. Build the pool: entries from background + harvested from current page
-    var pool = [].concat(entries);
-    Object.keys(pageImgMap).forEach(function(pName) {
-      var existingIdx = pool.findIndex(function(e) { return e.question_name === pName; });
-      if (existingIdx !== -1) {
-        // V2 REFIX: If local cache has NO images but page HAS them, overwrite with page data
-        if ((!pool[existingIdx].question_imgs || pool[existingIdx].question_imgs.length === 0) && pageImgMap[pName].length > 0) {
-          pool[existingIdx].question_imgs = pageImgMap[pName];
-        }
-      } else {
-        pool.push({
-          question_name: pName,
-          question_imgs: pageImgMap[pName],
-          subject: (typeof inferSubject === 'function') ? inferSubject(pName) : 'other'
+        // Build a set of question names already in any group
+        var alreadyGrouped = new Set();
+        existingGroups.forEach(function(g) {
+          (g.questions || []).forEach(function(n) { alreadyGrouped.add(n); });
         });
-      }
-    });
 
-    console.log('[IB Auto-Dup] Pool size for comparison: ' + pool.length + ' questions.');
+        var pageImgMap = {};  // name → [imgUrls]
+        var pageItems = document.querySelectorAll('#questions-list1 li[id^="qid-"], .ib-question-item');
+        
+        pageItems.forEach(function(li) {
+          var data = (typeof parseOnclickData === 'function') ? parseOnclickData(li) : null;
+          var textEl = li.querySelector('.ib-qname-text') || li.querySelector('span');
+          var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
+          
+          if (realName && data && data.question_images && data.question_images.length > 0) {
+            pageImgMap[realName] = data.question_images;
+          }
+        });
 
-    // Parse every pool item and group candidates by (subject, paper, rest) — differ only in tz
-    var buckets = {};  
-    pool.forEach(function(e) {
-      var p = (typeof parseIBName === 'function') ? parseIBName(e.question_name) : null;
-      if (!p) return;
-      var key = p.subject + '/' + p.paper + '_' + p.rest;
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push({ entry: e, tz: p.tz });
-    });
+        // 3. Build the pool: entries from background + harvested from current page
+        var pool = [].concat(entries);
+        Object.keys(pageImgMap).forEach(function(pName) {
+          var existingIdx = pool.findIndex(function(e) { return e.question_name === pName; });
+          if (existingIdx !== -1) {
+            if ((!pool[existingIdx].question_imgs || pool[existingIdx].question_imgs.length === 0) && pageImgMap[pName].length > 0) {
+              pool[existingIdx].question_imgs = pageImgMap[pName];
+            }
+          } else {
+            pool.push({
+              question_name: pName,
+              question_imgs: pageImgMap[pName],
+              subject: (typeof inferSubject === 'function') ? inferSubject(pName) : 'other'
+            });
+          }
+        });
 
-    console.log('[IB Auto-Dup] Bucketed into ' + Object.keys(buckets).length + ' groups. Checking for multi-member buckets...');
+        // 1. DUAL-QUEUE PREP
+        var pageQueue = []; // Questions currently on page
+        var dbQueue   = []; // Questions in historical cache
+        var pageYears = new Set();
 
-    // Collect candidate groups: ≥2 members, at least pair not already grouped together
-    var pendingPairs = [];
-    Object.keys(buckets).forEach(function(key) {
-      var bucket = buckets[key];
-      if (bucket.length < 2) return;
-      var names = bucket.map(function(b) { return b.entry.question_name; });
-      var isRejected = (window.IB.rejectedGroups || []).some(function(rg) {
-        return (rg.questions || []).length === names.length && names.every(function(n) { return (rg.questions || []).includes(n); });
-      });
-      if (isRejected) return;
+        // Populate pageQueue
+        Object.keys(pageImgMap).forEach(function(pName) {
+          var meta = (typeof parseIBName === 'function') ? parseIBName(pName) : null;
+          if (meta) {
+            pageQueue.push({ entry: { question_name: pName, question_imgs: pageImgMap[pName] }, meta: meta });
+            if (meta.year) pageYears.add(parseInt(meta.year));
+          }
+        });
 
-      // Check if ALL are already in the same existing group
-      var names = bucket.map(function(b) { return b.entry.question_name; });
-      var allGroupedTogether = existingGroups.some(function(g) {
-        return names.every(function(n) { return g.questions && g.questions.indexOf(n) !== -1; });
-      });
-      if (allGroupedTogether) return;
-      pendingPairs.push(bucket);
-    });
+        // Determine relevant year range (+/- 1 year buffer)
+        var minYear = pageYears.size > 0 ? Math.min.apply(null, Array.from(pageYears)) - 1 : 0;
+        var maxYear = pageYears.size > 0 ? Math.max.apply(null, Array.from(pageYears)) + 1 : 3000;
 
-    console.log('[IB Auto-Dup] Identified ' + pendingPairs.length + ' potential duplicate candidate group(s).');
+        // Populate dbQueue (Pruned by year)
+        entries.forEach(function(e) {
+          if (pageImgMap[e.question_name]) return; // Skip if already in pageQueue
 
-    if (pendingPairs.length === 0) {
-      console.log('[IB Auto-Dup] No new candidates to check.');
-      _autoDupRunning = false;
-      if (isManual) showToast('No new duplicate candidates found on this page.', 'success');
-      return;
-    }
+          var meta = (typeof parseIBName === 'function') ? parseIBName(e.question_name) : null;
+          if (meta && meta.isDetailed) {
+            var y = parseInt(meta.year);
+            if (y >= minYear && y <= maxYear) {
+              dbQueue.push({ entry: e, meta: meta });
+            }
+          }
+        });
 
-    var idx = 0;
-    var foundAny = false;
-    function processNext() {
-      if (idx >= pendingPairs.length) { 
-        _autoDupRunning = false; 
+        console.log('[IB Auto-Dup] Dual-Queue: Page(' + pageQueue.length + '), Relevant-DB(' + dbQueue.length + ')');
+
+        var foundAny = false;
+        var hashCache = {};
+        var sessionProcessed = new Set(); // Global processed for this session
+
+        async function getEntryHashes(entry) {
+          if (hashCache[entry.question_name]) return hashCache[entry.question_name];
+          var urls = entry.question_imgs || [];
+          var hashes = [];
+          for (var k = 0; k < Math.min(urls.length, 2); k++) {
+            try { 
+              var img = await loadImg(urls[k]);
+              hashes.push(computeDHash(img));
+            } catch(e) { hashes.push(null); }
+          }
+          hashCache[entry.question_name] = hashes;
+          return hashes;
+        }
+
+        async function processMatch(itemA, itemB, similarity) {
+          var e1 = itemA.entry, e2 = itemB.entry;
+          var p1 = itemA.meta,  p2 = itemB.meta;
+          
+          console.log('[IB Auto-Dup] MATCH FOUND: ' + e1.question_name + ' vs ' + e2.question_name + ' (' + Math.round(similarity*100) + '%)');
+          foundAny = true;
+          sessionProcessed.add(e2.question_name);
+
+          // Identify Primary (Priority Level HL > Preference Level > Newer TZ)
+          var subjKey = (itemA.entry.subject || 'other').toLowerCase();
+          var prefLevel = (res.ib_settings.dupPrefs?.[subjKey] || 'HL').toUpperCase();
+          var primary = e1.question_name, duplicate = e2.question_name;
+          
+          if ((p2.level || '').toUpperCase() === prefLevel && (p1.level || '').toUpperCase() !== prefLevel) {
+            primary = e2.question_name; duplicate = e1.question_name;
+          } else if (p2.tz > p1.tz) {
+            primary = e2.question_name; duplicate = e1.question_name;
+          }
+
+          var dupGroup = {
+            id: 'dup_auto_' + Math.random().toString(36).substr(2,9),
+            questions: [primary, duplicate], primary: primary, status: 'ai', urls: {}
+          };
+          dupGroup.urls[primary] = window.location.href;
+          dupGroup.urls[duplicate] = window.location.href;
+
+          return new Promise(resolve => {
+            chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup }, function(saveRes) {
+              if (saveRes && saveRes.ok) console.log('[IB] Auto-duplicate saved.');
+              else if (saveRes && saveRes.error === 'conflict') console.warn('[IB] Group merge rejected due to QNum conflict.');
+              resolve();
+            });
+          });
+        }
+
+        // --- STAGE 1: INTERNAL PAGE SWEEP ---
+        console.log('[IB Auto-Dup] Stage 1: Internal Page Sweep...');
+        for (var i = 0; i < pageQueue.length; i++) {
+          var itemA = pageQueue[i];
+          if (sessionProcessed.has(itemA.entry.question_name)) continue;
+
+          for (var j = i + 1; j < pageQueue.length; j++) {
+            var itemB = pageQueue[j];
+            if (sessionProcessed.has(itemB.entry.question_name)) continue;
+
+            // Priority: Match only if same Subject/Year/Season/Paper
+            if (itemA.meta.subject !== itemB.meta.subject || itemA.meta.year !== itemB.meta.year || itemA.meta.season !== itemB.meta.season) continue;
+            
+            // Hard Stop: Same Paper conflict (Q1 vs Q2)
+            if (itemA.meta.paper === itemB.meta.paper && itemA.meta.tz === itemB.meta.tz && itemA.meta.qNum !== itemB.meta.qNum) continue;
+
+            var h1 = await getEntryHashes(itemA.entry), h2 = await getEntryHashes(itemB.entry);
+            var bestHashSim = (h1[0] && h2[0]) ? (1 - (getHammingDistance(h1[0], h2[0]) / h1[0].length)) : 0;
+            if (bestHashSim < 0.90) continue;
+
+            var similarity = await compareAllImages(itemA.entry.question_imgs, itemB.entry.question_imgs);
+            if (similarity >= IB_DUP_TOLERANCE) {
+              await processMatch(itemA, itemB, similarity);
+            }
+          }
+        }
+
+        // --- STAGE 2: TARGETED DB SWEEP ---
+        console.log('[IB Auto-Dup] Stage 2: Targeted DB Sweep...');
+        for (var i = 0; i < pageQueue.length; i++) {
+          var itemA = pageQueue[i];
+          if (sessionProcessed.has(itemA.entry.question_name)) continue;
+
+          for (var j = 0; j < dbQueue.length; j++) {
+            var itemB = dbQueue[j];
+            if (sessionProcessed.has(itemB.entry.question_name)) continue;
+
+            // 1. Same-Paper Identity Check (Instruction: Prune duplicates in same paper)
+            // If they share everything but have different QNums, they CANNOT be dups.
+            if (itemA.meta.subject === itemB.meta.subject && itemA.meta.year === itemB.meta.year && 
+                itemA.meta.season === itemB.meta.season && itemA.meta.paper === itemB.meta.paper && 
+                itemA.meta.tz === itemB.meta.tz && itemA.meta.level === itemB.meta.level && 
+                itemA.meta.qNum !== itemB.meta.qNum) {
+              continue;
+            }
+
+            // 2. Already matched check
+            var alreadyMatch = existingGroups.find(function(g) {
+              return g.status !== 'ai-rejected' && (g.questions || []).includes(itemA.entry.question_name) && (g.questions || []).includes(itemB.entry.question_name);
+            });
+            if (alreadyMatch) continue;
+
+            // 3. Heuristic match (Same QNum is far more likely)
+            var h1 = await getEntryHashes(itemA.entry), h2 = await getEntryHashes(itemB.entry);
+            var bestHashSim = (h1[0] && h2[0]) ? (1 - (getHammingDistance(h1[0], h2[0]) / h1[0].length)) : 0;
+            
+            // If QNum is different, hash similarity must be extremely high to consider
+            var reqHash = (itemA.meta.qNum === itemB.meta.qNum) ? 0.90 : 0.98;
+            if (bestHashSim < reqHash) continue;
+
+            var similarity = await compareAllImages(itemA.entry.question_imgs, itemB.entry.question_imgs);
+            if (similarity >= IB_DUP_TOLERANCE) {
+              await processMatch(itemA, itemB, similarity);
+            }
+          }
+        }
+        
+        _autoDupRunning = false;
         if (isManual) {
           if (foundAny) showToast('✅ Rescan complete!', 'success');
           else showToast('No new duplicates found on this page.', 'success');
         }
-        return; 
-      }
-      var bucket = pendingPairs[idx++];
-      // console.log('[IB Auto-Dup] Analyzing bucket ' + idx + '/' + pendingPairs.length + '...');
-
-      // Pick first two that have images to compare
-      var e1 = null, e2 = null;
-      for (var i = 0; i < bucket.length && (!e1 || !e2); i++) {
-        var imgs = bucket[i].entry.question_imgs || [];
-        if (imgs.length > 0) {
-          if (!e1) e1 = bucket[i];
-          else if (!e2) e2 = bucket[i];
-        }
-      }
-
-      if (!e1 || !e2) {
-        console.log('[IB Auto-Dup] Skipping - no images for:', bucket.map(function(b){return b.entry.question_name;}).join(', '));
-        processNext(); return;
-      }
-
-      compareAllImages(e1.entry.question_imgs, e2.entry.question_imgs).then(function(similarity) {
-        console.log('[IB Auto-Dup] ' + e1.entry.question_name + ' vs ' + e2.entry.question_name + ' → ' + Math.round(similarity * 100) + '%');
-        if (similarity >= IB_DUP_TOLERANCE) {
-          var allNames = bucket.map(function(b) { return b.entry.question_name; });
-          // Primary = highest timezone number
-          var primary = bucket.reduce(function(best, b) {
-            return b.tz > best.tz ? b : best;
-          }, bucket[0]).entry.question_name;
-
-          var dupGroup = {
-            id: 'dup_auto_' + allNames.sort().join('|'),
-            questions: allNames,
-            primary:   primary,
-            status:    'ai',
-            urls:      {}
-          };
-          allNames.forEach(function(n) { dupGroup.urls[n] = window.location.href; });
-          var nameUrls = dupGroup.urls;
-
-          chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup, nameUrls: nameUrls }, function() {
-            foundAny = true;
-            console.log('[IB] Auto-duplicate saved:', allNames.join(', '), '(' + Math.round(similarity * 100) + '% match, primary=' + primary + ')');
-            if (isManual) showToast('Found Duplicate: ' + allNames[0] + ' & ' + allNames[1], 'success');
-            processNext();
-          });
-        } else {
-          processNext();
-        }
-      });
-    }
-    processNext();
+    });
   });
 }
 

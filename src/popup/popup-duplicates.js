@@ -263,9 +263,67 @@ window.IB.saveDuplicateGroup = async function() {
   }
 };
 
+// ── Duplicate Preferences (HL vs SL) ─────────────────────────────────────────
+
+function renderDupPrefs() {
+  var container = document.getElementById('dups-prefs-list');
+  if (!container) return;
+  
+  chrome.storage.local.get(['ib_settings'], function(res) {
+    var settings = res.ib_settings || {};
+    var prefs = settings.dupPrefs || { biology:'HL', chemistry:'HL', physics:'HL', mathematics:'HL', economics:'HL' };
+    
+    // Core subjects only
+    var subjects = ['biology', 'chemistry', 'physics', 'mathematics', 'economics'];
+    var SUBJECT_LABELS = { biology: '🌿 Biology', chemistry: '⚗ Chemistry', physics: '⚛ Physics', mathematics: '∑ Mathematics', economics: '📈 Economics' };
+
+    container.innerHTML = subjects.map(function(s) {
+      var current = prefs[s] || 'HL';
+      return '<div class="dups-prefs-row">' +
+        '<div class="dups-prefs-label">' + (SUBJECT_LABELS[s] || s) + '</div>' +
+        '<div class="dups-prefs-toggle">' +
+          '<div class="dups-prefs-opt ' + (current === 'HL' ? 'active' : '') + '" data-subj="' + s + '" data-val="HL">HL</div>' +
+          '<div class="dups-prefs-opt ' + (current === 'SL' ? 'active' : '') + '" data-subj="' + s + '" data-val="SL">SL</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    container.querySelectorAll('.dups-prefs-opt').forEach(function(opt) {
+      opt.addEventListener('click', function() {
+        var s = this.getAttribute('data-subj');
+        var v = this.getAttribute('data-val');
+        toggleDupPref(s, v);
+      });
+    });
+  });
+}
+
+function toggleDupPref(subject, value) {
+  chrome.storage.local.get(['ib_settings'], function(res) {
+    var s = res.ib_settings || {};
+    if (!s.dupPrefs) s.dupPrefs = { biology:'HL', chemistry:'HL', physics:'HL', mathematics:'HL', economics:'HL' };
+    s.dupPrefs[subject] = value;
+    chrome.storage.local.set({ ib_settings: s }, function() {
+      renderDupPrefs();
+    });
+  });
+}
+
 // ── Wire up events (called after DOM ready) ───────────────────────────────────
 
 window.IB.initDuplicateModal = function() {
+  // Toggle Preferences Panel
+  var settingsBtn = document.getElementById('dups-settings-btn');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', function() {
+      var panel = document.getElementById('dups-prefs-panel');
+      if (panel) {
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) renderDupPrefs();
+      }
+    });
+  }
+
   var searchInput = document.getElementById('dup-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', function() { runDupSearch(this.value); });
@@ -301,6 +359,19 @@ window.IB.initDuplicateModal = function() {
 
   var cancelBtn = document.getElementById('dup-cancel-btn');
   if (cancelBtn) cancelBtn.addEventListener('click', window.IB.closeDuplicateModal);
+
+  var clearBtn = document.getElementById('dups-clear-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function() {
+      if (confirm('Are you SURE you want to clear all duplicate groups? This will reset your duplicates database and cannot be undone.')) {
+        chrome.runtime.sendMessage({ action: 'clearAllDuplicates' }, async function() {
+          window.IB.duplicatesDB = [];
+          if (typeof markDoneOnPage === 'function') await markDoneOnPage();
+          window.location.reload(); 
+        });
+      }
+    });
+  }
 
   var overlay = document.getElementById('dup-modal-overlay');
   if (overlay) {

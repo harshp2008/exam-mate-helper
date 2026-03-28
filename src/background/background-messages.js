@@ -257,70 +257,114 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     (async function() {
       var settings = await getSettings();
       var entries = await loadCache();
-      var group = request.group; // { id, questions: [], primary: "...", status: "...", urls: {} }
-      var allNames = group.questions || [];
-      var primary = group.primary || allNames[0] || '';
+      var groups = await loadDuplicates();
+      var newGroup = request.group;
+      var newNames = newGroup.questions || [];
       
-      // Upgrade logic for V2 structure
-      if (!group.urls) group.urls = {};
-      if (request.nameUrls) {
-        Object.keys(request.nameUrls).forEach(function(n) {
-          if (request.nameUrls[n]) group.urls[n] = request.nameUrls[n];
-        });
+      // 1. Validation: Prevent 'Bloated' groups with conflicting QNums (e.g. Q1 and Q2 from same paper)
+      function parseSimpleIB(n) {
+        var m = (n || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?([A-Z0-9]+)_([A-Za-z]+)_(\d{4})_Q?(\d+)$/i);
+        if (m) return { s:m[1].toUpperCase(), p:m[2], tz:m[3], sea:m[5].toLowerCase(), yr:m[6], q:m[7] };
+        return null;
       }
-      // Status tagging
-      if (!group.status) {
-        group.status = (group.marked_by_user === false) ? 'ai' : 'user';
+      function checkConflict(list) {
+        for (var i = 0; i < list.length; i++) {
+          for (var j = i + 1; j < list.length; j++) {
+            var p1 = parseSimpleIB(list[i]), p2 = parseSimpleIB(list[j]);
+            if (p1 && p2 && p1.s === p2.s && p1.p === p2.p && p1.yr === p2.yr && p1.sea === p2.sea && p1.tz === p2.tz) {
+              if (p1.q !== p2.q) return true; // Conflict: Same paper, different QNum
+            }
+          }
+        }
+        return false;
       }
 
-      allNames.forEach(function(name) {
+      // 2. Check for overlap with existing groups to perform MERGING
+      var existingGroup = null;
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        if (g.status === 'ai-rejected') continue;
+        var hasOverlap = (g.questions || []).some(function(q) { return newNames.includes(q); });
+        if (hasOverlap) {
+          existingGroup = g;
+          break;
+        }
+      }
+
+      var finalGroup;
+      if (existingGroup) {
+        // MERGE: Add new names to existing group, but CHECK FOR CONFLICT FIRST
+        var mergedSet = new Set(existingGroup.questions || []);
+        newNames.forEach(function(n) { mergedSet.add(n); });
+        var mergedList = Array.from(mergedSet);
+        
+        if (checkConflict(mergedList)) {
+          console.warn('[IB Cache] Merge rejected due to paper conflict:', mergedList);
+          sendResponse({ ok: false, error: 'conflict' });
+          return;
+        }
+        existingGroup.questions = mergedList;
+        
+        // Merge URLs
+        if (!existingGroup.urls) existingGroup.urls = {};
+        if (newGroup.urls) {
+          Object.keys(newGroup.urls).forEach(function(n) {
+            if (newGroup.urls[n]) existingGroup.urls[n] = newGroup.urls[n];
+          });
+        }
+        if (request.nameUrls) {
+          Object.keys(request.nameUrls).forEach(function(n) {
+            if (request.nameUrls[n]) existingGroup.urls[n] = request.nameUrls[n];
+          });
+        }
+        finalGroup = existingGroup;
+      } else {
+        // CREATE: Use the new group as is
+        if (!newGroup.urls) newGroup.urls = {};
+        if (request.nameUrls) {
+          Object.keys(request.nameUrls).forEach(function(n) {
+            if (request.nameUrls[n]) newGroup.urls[n] = request.nameUrls[n];
+          });
+        }
+        if (!newGroup.status) newGroup.status = 'ai';
+        groups.push(newGroup);
+        finalGroup = newGroup;
+      }
+
+      // 2. Sync entries data (log status, favs, topics)
+      var primary = finalGroup.primary || finalGroup.questions[0] || '';
+      finalGroup.questions.forEach(function(name) {
         var isPrimary = (name === primary);
         var ex = entries.find(function(e) { return e.question_name === name; });
-        var qUrl = group.urls[name];
+        var qUrl = finalGroup.urls[name];
         
         if (ex) {
-          delete ex.repeated_question; // V2 PURGE: Ensure no legacy fields persist
+          delete ex.repeated_question;
           if (qUrl && (!ex.source_url || ex.source_url === 'undefined')) ex.source_url = qUrl;
-          
-          // Data Integrity: Only primary versions hold status data
           if (!isPrimary) {
             ex.logged_at = null;
             ex.is_favourite = false;
             ex.todo_date = null;
           }
         } else {
-          // Create skeleton entry for untracked duplicates
           var u = name.toUpperCase();
           var subj = u.includes('CHEMI') ? 'chemistry' : u.includes('PHYSI') || u.includes('PHYS') ? 'physics' : u.includes('MATH') ? 'mathematics' : u.includes('BIOL') || u.includes('BIO') ? 'biology' : 'other';
           entries.unshift({ 
-            question_name: name, 
-            subject: subj, 
-            question_imgs: [], 
-            answer_imgs: [], 
-            old_topics: '', 
-            is_favourite: false, 
-            logged_at: null, 
-            todo_date: null, 
-            source_url: qUrl || ''
+            question_name: name, subject: subj, question_imgs: [], answer_imgs: [], old_topics: '', 
+            is_favourite: false, logged_at: null, todo_date: null, source_url: qUrl || ''
           });
         }
       });
 
       await saveCache(entries);
-
-      var groups = await loadDuplicates();
-      var idx = groups.findIndex(function(g) { return g.id === group.id; });
-      if (idx !== -1) groups[idx] = group; else groups.push(group);
       await saveDuplicates(groups);
 
       if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-        try { await fsWriteDupGroup(settings, group); } catch(e) {}
+        try { await fsWriteDupGroup(settings, finalGroup); } catch(e) {}
       }
 
-      // V2: Trigger instantaneous sidebar refresh
       if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
-
-      sendResponse({ ok: true });
+      sendResponse({ ok: true, merged: !!existingGroup });
     })();
     return true;
   }
@@ -382,6 +426,32 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         console.log('[IB] Cleared ' + (originalLength - groups.length) + ' AI rejections for this page.');
       }
       sendResponse({ ok: true, cleared: originalLength - groups.length });
+    })();
+    return true;
+  }
+
+  if (request.action === 'clearAllDuplicates') {
+    (async function() {
+      var settings = await getSettings();
+      var entries = await loadCache();
+      var groups = await loadDuplicates();
+      
+      // Clear AI rejections too
+      await saveRejectedGroups([]);
+      
+      // Wipe all groups
+      if (settings.mode === 'firebase') {
+        for (var i = 0; i < groups.length; i++) {
+          try { await fsDeleteDupGroup(settings, groups[i].id); } catch(e) {}
+        }
+      }
+      await saveDuplicates([]);
+
+      // Cleanse entries of any duplicate-related state (isPrimary doesn't matter if no groups, but we can't 'restore' old data easily)
+      await saveCache(entries);
+
+      if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
+      sendResponse({ ok: true });
     })();
     return true;
   }

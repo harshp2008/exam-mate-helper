@@ -7,11 +7,47 @@ async function markDoneOnPage() {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     var tab = tabs[0];
     if (!tab || !tab.url || !tab.url.includes('exam-mate.com/topicalpastpapers')) return;
-    var allNames = window.IB.allEntries.map(function (e) { return e.question_name; });
-    var favNames = window.IB.allEntries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
+    
+    // V2 FIX: Only filter for actually logged (done) questions. 
+    // Sending all entries was causing unmarked questions to flicker to 'done' state.
+    var allNames = window.IB.allEntries
+      .filter(function (e) { return e.logged_at !== null; })
+      .map(function (e) { return e.question_name; });
+      
+    var favNames = window.IB.allEntries
+      .filter(function (e) { return e.is_favourite === true; })
+      .map(function (e) { return e.question_name; });
+      
     var today = new Date().toISOString().split('T')[0];
-    var todoNames = window.IB.allEntries.filter(function (e) { return e.todo_date === today; }).map(function (e) { return e.question_name; });
-    await chrome.tabs.sendMessage(tab.id, { action: 'markDone', questionNames: allNames, favouriteNames: favNames, todoNames: todoNames });
+    var todoNames = window.IB.allEntries
+      .filter(function (e) { return e.todo_date === today; })
+      .map(function (e) { return e.question_name; });
+
+    // V2 FIX: Also calculate and send dupInfo to update sidebar icons
+    var dupInfo = {};
+    var rejectedGroups = [];
+    (window.IB.duplicatesDB || []).forEach(function(g) {
+      if (g.status === 'ai-rejected') { rejectedGroups.push(g); return; }
+      var qList = g.questions || [];
+      qList.forEach(function(name) {
+        dupInfo[name] = {
+          is_primary: name === g.primary,
+          linked_questions: qList.filter(function(n) { return n !== name; }),
+          primary_name: g.primary || qList[0] || '',
+          status: g.status || 'user',
+          urls: g.urls || {}
+        };
+      });
+    });
+      
+    await chrome.tabs.sendMessage(tab.id, { 
+      action: 'markDone', 
+      questionNames: allNames, 
+      favouriteNames: favNames, 
+      todoNames: todoNames,
+      dupInfo: dupInfo,
+      rejectedGroups: rejectedGroups
+    });
   } catch (e) { }
 }
 
