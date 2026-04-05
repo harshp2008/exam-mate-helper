@@ -263,8 +263,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       
       // 1. Validation: Prevent 'Bloated' groups with conflicting QNums (e.g. Q1 and Q2 from same paper)
       function parseSimpleIB(n) {
-        var m = (n || '').match(/^([A-Z]+)[\/\-]?(\d)(\d)[_ ]?([A-Z0-9]+)_([A-Za-z]+)_(\d{4})_Q?(\d+)$/i);
-        if (m) return { s:m[1].toUpperCase(), p:m[2], tz:m[3], sea:m[5].toLowerCase(), yr:m[6], q:m[7] };
+        // Robust regex for IB question names: [Subj]_[Paper][TZ]_[Season]_[Year]_Q[Num]
+        // Example: BIOL_32_MARCH_2020_Q4
+        var m = (n || '').match(/^([A-Z]+)[\/ \-_]?(\d)?(\d)[_ ]?([A-Z0-9]*)[_ ]?([A-Za-z]+)[_ ]?(\d{4})[_ ]?Q?(\d+)$/i);
+        if (m) return { s:m[1].toUpperCase(), p:m[2]||'', tz:m[3], sea:m[5].toLowerCase(), yr:m[6], q:m[7] };
         return null;
       }
       function checkConflict(list) {
@@ -299,7 +301,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         var mergedList = Array.from(mergedSet);
         
         if (checkConflict(mergedList)) {
-          console.warn('[IB Cache] Merge rejected due to paper conflict:', mergedList);
+          console.log('[IB Cache] Merge rejected due to paper conflict (expected for non-duplicates):', mergedList);
           sendResponse({ ok: false, error: 'conflict' });
           return;
         }

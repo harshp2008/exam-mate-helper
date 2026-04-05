@@ -245,7 +245,21 @@ function injectAllCSS() {
     'div.content-page {padding-bottom: 4px; padding-top: 5px;}',
     '#ib-dup-sidebar {height: 100% !important;}',
     '#app > div.row > div.col-xl-9.col-lg-8.ps-lg-1 {flex-grow: 1;}',
-    '#ib-dup-nav-item a.nav-link:focus, #ib-dup-nav-item a.nav-link:active { background-color: transparent !important; outline: none !important; box-shadow: none !important; }'
+    '#ib-dup-nav-item a.nav-link:focus, #ib-dup-nav-item a.nav-link:active { background-color: transparent !important; outline: none !important; box-shadow: none !important; }',
+    '#ib-copy-nav-item a.nav-link:focus, #ib-copy-nav-item a.nav-link:active { background-color: transparent !important; outline: none !important; box-shadow: none !important; }',
+    
+    // ── Quick Copy Sidebar Styles ──
+    '.ibo-copy-container { display: flex; flex-direction: column; gap: 12px; padding: 10px; overflow-y: auto; flex: 1; width: 100%; box-sizing: border-box; }',
+    '.ibo-copy-row { display: flex; align-items: stretch; gap: 0; padding: 0; background: #f9fbff; border: 1px solid #e0e8f5; border-radius: 10px; transition: background 0.15s; position: relative; width: 100%; box-sizing: border-box; overflow: hidden; }',
+    '.ibo-copy-row:hover { background: #f0f5ff; }',
+    '.ibo-copy-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; border-right: 1px dashed #cedbed; padding: 10px; }',
+    '.ibo-copy-content img { width: 100%; max-width: 100%; height: auto; border-radius: 4px; cursor: zoom-in; display: block; }',
+    '.ibo-copy-content .ibo-copy-text { font-size: 12px; color: #333; line-height: 1.4; word-break: break-word; font-family: monospace; }',
+    '.ibo-copy-action { width: 45px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(24, 95, 165, 0.03); }',
+    '.ibo-copy-btn { background: none; border: none; color: #185FA5; cursor: pointer; padding: 0; width: 100%; height: 100%; transition: background 0.15s; display: flex; align-items: center; justify-content: center; }',
+    '.ibo-copy-btn:hover { background: rgba(24, 95, 165, 0.08); }',
+    '.ibo-copy-btn:active { background: rgba(24, 95, 165, 0.15); }',
+    '.ibo-copy-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9cb6d8; letter-spacing: 0.05em; margin-bottom: 2px; }'
 
   ].join('\n');
   document.head.appendChild(style);

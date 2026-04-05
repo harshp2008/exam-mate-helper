@@ -424,7 +424,7 @@ function startScanInternal(isManual) {
           return new Promise(resolve => {
             chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup }, function(saveRes) {
               if (saveRes && saveRes.ok) console.log('[IB] Auto-duplicate saved.');
-              else if (saveRes && saveRes.error === 'conflict') console.warn('[IB] Group merge rejected due to QNum conflict.');
+              else if (saveRes && saveRes.error === 'conflict') console.log('[IB Auto-Dup] Group merge rejected due to QNum conflict (Same paper sanity check).');
               resolve();
             });
           });
@@ -510,48 +510,68 @@ function startScanInternal(isManual) {
 
 function injectDupButton() {
   var navUl = document.querySelector('#question > div > div.row > div > ul');
-  if (!navUl || document.getElementById('ib-dup-nav-item')) return;
-
-  var dupNavItem = document.createElement('li');
-  dupNavItem.className = 'nav-item';
-  dupNavItem.id = 'ib-dup-nav-item';
-  dupNavItem.title = 'Mark this question as a duplicate of another question';
-  dupNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link">' +
-    '<span style="font-size:14px;display:block;text-align:center;line-height:1;">\uD83D\uDD17</span>' +
-    '<span style="font-size:0.6rem;font-weight:700"> Dup </span>' +
-    '</a>';
-  dupNavItem.addEventListener('click', function(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Remove focus to prevent stay-grey bug
-    if (e.currentTarget && e.currentTarget.blur) e.currentTarget.blur();
-    var link = e.currentTarget.querySelector('a');
-    if (link && link.blur) link.blur();
-    var sidebar = document.getElementById('ib-dup-sidebar');
-    if (sidebar && sidebar.classList.contains('open')) {
-      closeDupSidebar();
-      return;
-    }
-
-    var list = document.getElementById('questions-list1');
-    var currentQ = '';
-    if (list) {
-      var activeLi = list.querySelector('li.active[id^="qid-"]');
-      if (activeLi) {
-        var ns = activeLi.querySelector('.ib-qname-text') || activeLi.querySelector('span');
-        currentQ = ns ? (ns.getAttribute('data-realname') || ns.textContent.trim()) : '';
+  if (!navUl) return;
+  
+  if (!document.getElementById('ib-dup-nav-item')) {
+    var dupNavItem = document.createElement('li');
+    dupNavItem.className = 'nav-item';
+    dupNavItem.id = 'ib-dup-nav-item';
+    dupNavItem.title = 'Mark this question as a duplicate of another question';
+    dupNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link">' +
+      '<span style="font-size:14px;display:block;text-align:center;line-height:1;">\uD83D\uDD17</span>' +
+      '<span style="font-size:0.6rem;font-weight:700"> Dup </span>' +
+      '</a>';
+    dupNavItem.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.currentTarget && e.currentTarget.blur) e.currentTarget.blur();
+      var sidebar = document.getElementById('ib-dup-sidebar');
+      if (sidebar && sidebar.classList.contains('open') && sidebar.getAttribute('data-mode') === 'dup') {
+        closeDupSidebar();
+        return;
       }
-    }
-    openDupSidebar(currentQ);
-  });
-  navUl.appendChild(dupNavItem);
+      var list = document.getElementById('questions-list1');
+      var currentQ = '';
+      if (list) {
+        var activeLi = list.querySelector('li.active[id^="qid-"]');
+        if (activeLi) {
+          var ns = activeLi.querySelector('.ib-qname-text') || activeLi.querySelector('span');
+          currentQ = ns ? (ns.getAttribute('data-realname') || ns.textContent.trim()) : '';
+        }
+      }
+      openDupSidebar(currentQ);
+    });
+    navUl.appendChild(dupNavItem);
+  }
+
+  if (!document.getElementById('ib-copy-nav-item')) {
+    var copyNavItem = document.createElement('li');
+    copyNavItem.className = 'nav-item';
+    copyNavItem.id = 'ib-copy-nav-item';
+    copyNavItem.title = 'Quickly copy question/answer images or text';
+    copyNavItem.innerHTML = '<a href="javascript:void(0);" class="nav-link">' +
+      '<span style="font-size:14px;display:block;text-align:center;line-height:1;">\uD83D\uDCCB</span>' +
+      '<span style="font-size:0.6rem;font-weight:700"> Copy </span>' +
+      '</a>';
+    copyNavItem.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.currentTarget && e.currentTarget.blur) e.currentTarget.blur();
+      var sidebar = document.getElementById('ib-dup-sidebar');
+      if (sidebar && sidebar.classList.contains('open') && sidebar.getAttribute('data-mode') === 'copy') {
+        closeDupSidebar();
+        return;
+      }
+      openCopySidebar();
+    });
+    navUl.appendChild(copyNavItem);
+  }
 }
 
 function setupDupButtonObserver() {
   if (window._ibDupObserver) return;
   var observer = new MutationObserver(function() {
-    if (!document.getElementById('ib-dup-nav-item')) injectDupButton();
+    injectDupButton();
   });
   observer.observe(document.body, { childList: true, subtree: true });
   window._ibDupObserver = observer;
@@ -615,6 +635,7 @@ function openDupSidebar(currentQName) {
       var sidebar = document.getElementById('ib-dup-sidebar');
       var row = document.querySelector('#app > div.row');
       if (sidebar && row) {
+        sidebar.setAttribute('data-mode', 'dup');
         sidebar.classList.add('open');
         row.classList.add('ib-dup-open');
       } else {
@@ -623,6 +644,156 @@ function openDupSidebar(currentQName) {
     }
     tryShow();
   });
+}
+
+function openCopySidebar() {
+  ensureDupSidebar();
+
+  var list = document.getElementById('questions-list1');
+  var activeLi = list ? list.querySelector('li.active[id^="qid-"]') : null;
+  var data = activeLi ? (typeof parseOnclickData === 'function' ? parseOnclickData(activeLi) : null) : null;
+
+  var items = [];
+  if (data) {
+    // Add Question Images
+    (data.question_images || []).forEach(url => items.push({ type: 'image', value: url, label: 'Question Image' }));
+    // Add Answer Images
+    (data.answer_images || []).forEach(url => items.push({ type: 'image', value: url, label: 'Answer Image' }));
+    // Add MCQ Answer Text if applicable
+    var mcq = (typeof getMcqAnswer === 'function') ? getMcqAnswer(data) : null;
+    if (mcq) items.push({ type: 'text', value: mcq, label: 'MCQ Answer' });
+  }
+
+  // Fallback: If no data from onclick, try parsing from DOM
+  if (items.length === 0) {
+    document.querySelectorAll('#question-image-box-1 img.img-fluid').forEach(img => {
+      if (img.src) items.push({ type: 'image', value: img.src, label: 'Question Image (Parsed)' });
+    });
+    var ansBox = document.getElementById('answer-text-1');
+    if (ansBox) {
+      ansBox.querySelectorAll('img').forEach(img => {
+        if (img.src) items.push({ type: 'image', value: img.src, label: 'Answer Image (Parsed)' });
+      });
+      var txt = ansBox.textContent.trim();
+      if (txt) items.push({ type: 'text', value: txt, label: 'Answer Text' });
+    }
+  }
+
+  buildCopySidebarContent(items);
+
+  function tryShow() {
+    var sidebar = document.getElementById('ib-dup-sidebar');
+    var row = document.querySelector('#app > div.row');
+    if (sidebar && row) {
+      sidebar.setAttribute('data-mode', 'copy');
+      sidebar.classList.add('open');
+      row.classList.add('ib-dup-open');
+    } else {
+      setTimeout(tryShow, 100);
+    }
+  }
+  tryShow();
+}
+
+function buildCopySidebarContent(items) {
+  var inner = document.getElementById('ibo-inner');
+  if (!inner) return;
+
+  inner.innerHTML =
+    '<div class="ibo-header">' +
+      '<div class="ibo-title">\uD83D\uDCCB Quick Copy</div>' +
+      '<button class="ibo-close" id="ibo-close-btn">\u2715</button>' +
+    '</div>' +
+    '<div class="ibo-copy-container" id="ibo-copy-container" style="flex: 1; padding-bottom: 20px;">' +
+      (items.length === 0 ? '<div class="ibo-no-results">No images or text found for this question.</div>' : '') +
+      items.map((item, idx) => `
+        <div class="ibo-copy-row">
+          <div class="ibo-copy-content">
+            <div class="ibo-copy-label">${item.label}</div>
+            ${item.type === 'image' 
+              ? `<img src="${item.value}" title="Click to enlarge" onclick="window.open(this.src, '_blank')">`
+              : `<div class="ibo-copy-text">${item.value}</div>`
+            }
+          </div>
+          <div class="ibo-copy-action">
+            <button class="ibo-copy-btn" data-idx="${idx}" title="Copy to clipboard">
+              <span style="font-size:18px;">\ud83d\udccb</span>
+            </button>
+          </div>
+        </div>
+      `).join('') +
+    '</div>';
+
+  inner.querySelector('#ibo-close-btn').onclick = closeDupSidebar;
+
+  inner.querySelectorAll('.ibo-copy-btn').forEach(btn => {
+    btn.onclick = function() {
+      var idx = parseInt(this.getAttribute('data-idx'));
+      var item = items[idx];
+      var self = this;
+      
+      this.style.opacity = '0.5';
+      this.innerHTML = '<span style="font-size:18px;">⌛</span>';
+
+      copyItemToClipboard(item.type, item.value).then(() => {
+        self.innerHTML = '<span style="font-size:18px;">✅</span>';
+        if (typeof showToast === 'function') showToast('Copied to clipboard!', 'success');
+      }).catch(err => {
+        console.error('Copy failed:', err);
+        self.innerHTML = '<span style="font-size:18px;">❌</span>';
+        if (typeof showToast === 'function') showToast('Failed to copy', 'error');
+      }).finally(() => {
+        setTimeout(() => {
+          self.style.opacity = '1';
+          self.innerHTML = '<span style="font-size:18px;">\ud83d\udccb</span>';
+        }, 1500);
+      });
+    };
+  });
+}
+
+function copyItemToClipboard(type, value) {
+  if (type === 'text') {
+    return navigator.clipboard.writeText(value);
+  } else {
+    // 🎨 Standard Active-Clipboard (Ctrl+V) Implementation
+    // This uses the modern Web API to fetch the image and write it as a PNG blob.
+    // Extremely reliable for manual pasting, though often ignored by Win+V History.
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = function() {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(blob => {
+            if (!blob) {
+              reject(new Error('Failed to create canvas blob'));
+              return;
+            }
+            try {
+              const item = new ClipboardItem({ 'image/png': blob });
+              navigator.clipboard.write([item]).then(resolve).catch(reject);
+            } catch (e) {
+              reject(e);
+            }
+          }, 'image/png');
+        } catch (e) {
+          reject(e);
+        }
+      };
+      
+      img.onerror = function() {
+        reject(new Error('Failed to load image from ' + value));
+      };
+
+      // Ensure absolute URL
+      img.src = value.startsWith('/') ? window.location.origin + value : value;
+    });
+  }
 }
 
 function closeDupSidebar() {

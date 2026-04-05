@@ -13,8 +13,21 @@ Declutters the ExamMate UI and gives you the tools to track every question you'v
 - **AJAX Navigation Support**: Full support for duplicate detection during dynamic page changes (Next Page, Search, Random) via an optimized MutationObserver bridge.
 - **Reactive UI & Status Toasts**: Instantaneous sidebar label updates and real-time progress toasts for all background engine actions.
 - **MCQ Text Answer Retrieval**: Automatically detects and displays text-based answers (e.g., "B") whenever image-based answers are missing.
+- **Quick Copy Sidebar**: Added a new content extraction sidebar (📋 icon) to quickly copy question/answer images and MCQ text to your clipboard.
 
 ---
+
+## 📋 Quick Copy & Clipboard Support
+
+The **Quick Copy** feature (available via the 📋 icon in the navigation bar) allows you to extract all images and text from the current question into a scrollable list for fast copying.
+
+### ⚠️ Clipboard Limitations (Windows)
+
+> [!NOTE]
+> Due to limitations in the Chrome Extension SDK and Windows OS security models, items copied via this feature are placed in your **active clipboard** (Ctrl+V works perfectly), but they may not consistently appear in the **Windows Clipboard History** (Win+V) panel.
+>
+> - **Images**: Will copy successfully for direct pasting, but the Win+V history panel may show "No preview available" or ignore the entry entirely.
+> - **Text**: Works natively in both active clipboard and Win+V history.
 
 ## 🚀 Key Features
 
