@@ -436,7 +436,20 @@
       <div class="stat-card"><div class="stat-val" id="stat-subjects">0</div><div class="stat-label">Subjects</div></div>
     </div>
     <div class="db-toolbar">
-      <input class="db-filter" type="text" id="db-filter" placeholder="Search by name, subject, or topic…" />
+      <div style="position:relative; flex:1; display:flex;">
+        <input class="db-filter" type="text" id="db-filter" placeholder="Search by name, subject, or topic…" style="width:100%; padding-right:32px;" />
+        <button id="db-filter-menu-btn" title="Filter Visibility" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:14px; opacity:0.6; padding:0;">⚙️</button>
+        <div id="db-filter-dropdown" style="display:none; position:absolute; right:0; top:110%; background:#fff; border:1px solid #ddd; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:8px; z-index:100; min-width:180px;">
+          <div style="margin-bottom:6px; font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.05em;">Visibility Options</div>
+          
+          <label class="db-filter-label" id="db-label-todos" style="display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; margin-bottom:6px; padding:4px; border-radius:4px; transition:background 0.1s;">
+            <input type="checkbox" id="db-chk-todos"> Show Incomplete To-Dos
+          </label>
+          <label class="db-filter-label" id="db-label-dups" style="display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; padding:4px; border-radius:4px; transition:background 0.1s;">
+            <input type="checkbox" id="db-chk-dups"> Show Primary Dups
+          </label>
+        </div>
+      </div>
       <button class="db-action-btn" id="sync-btn">↻ Sync</button>
       <div class="more-menu">
         <button class="more-btn" id="more-btn">⋮</button>

@@ -482,8 +482,60 @@ function renderEntryList() {
   }
 
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
+  var today = new Date().toISOString().split('T')[0];
+
+  // Disable/enable toggles based on presence of incomplete items globally
+  var hasIncompleteTodos = window.IB.allEntries.some(function(e) { return !e.logged_at && e.todo_date === today && !isNonPrimaryDup(e); });
+  var hasIncompleteDups = window.IB.allEntries.some(function(e) { 
+    return !e.logged_at && !isNonPrimaryDup(e) && (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
+  });
+
+  var chkTodos = document.getElementById('db-chk-todos');
+  var lblTodos = document.getElementById('db-label-todos');
+  if (chkTodos && lblTodos) {
+    if (!hasIncompleteTodos) {
+      chkTodos.disabled = true;
+      lblTodos.style.opacity = '0.5';
+      lblTodos.title = 'No incomplete to-dos in your database.';
+    } else {
+      chkTodos.disabled = false;
+      lblTodos.style.opacity = '1';
+      lblTodos.title = 'Toggle visibility of incomplete to-dos.';
+    }
+  }
+
+  var chkDups = document.getElementById('db-chk-dups');
+  var lblDups = document.getElementById('db-label-dups');
+  if (chkDups && lblDups) {
+    if (!hasIncompleteDups) {
+      chkDups.disabled = true;
+      lblDups.style.opacity = '0.5';
+      lblDups.title = 'No incomplete primary duplicates in your database.';
+    } else {
+      chkDups.disabled = false;
+      lblDups.style.opacity = '1';
+      lblDups.title = 'Toggle visibility of incomplete primary duplicates.';
+    }
+  }
+
   var filtered = window.IB.allEntries.filter(function (e) {
     if (isNonPrimaryDup(e)) return false; // hide non-primary dups
+    
+    var isDone = !!e.logged_at;
+    var isFav = !!e.is_favourite;
+    var isTodo = e.todo_date === today;
+    var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
+
+    if (!isDone && !isFav) {
+      if (isPrimaryDup && isTodo) {
+         if (!window.IB.dbShowDups && !window.IB.dbShowTodos) return false;
+      } else if (isTodo && !window.IB.dbShowTodos) {
+        return false;
+      } else if (isPrimaryDup && !window.IB.dbShowDups) {
+        return false;
+      }
+    }
+
     if (!filter) return true;
     return (e.question_name || '').toLowerCase().includes(filter) ||
            (e.subject || '').toLowerCase().includes(filter) ||
@@ -498,7 +550,6 @@ function renderEntryList() {
   }
 
   // Group by subject
-  var today = new Date().toISOString().split('T')[0];
   var groups = {};
   filtered.forEach(function(e) {
     var s = e.subject || 'other';
@@ -583,7 +634,12 @@ function renderEntryList() {
 
       var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
       var isTodo = e.todo_date === today;
-      var todoBadge = isTodo ? '<span class="db-todo-badge">📋 To‑Do</span>' : '';
+      var todoBadge = '';
+      if (isTodo) {
+         todoBadge = e.logged_at 
+           ? '<span class="db-todo-badge" style="background:#E1F5EE;color:#0F6E56;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600;">✅ completed</span>'
+           : '<span class="db-todo-badge" style="background:#FFF3E0;color:#E65100;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600;">📝 to-do</span>';
+      }
       var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
       var dupBadge = isPrimaryDup ? '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#E6F1FB;color:#185FA5;margin-left:4px;font-weight:600;">🔗 primary</span>' : '';
       var timeStr = e.logged_at || '<span class="db-not-done">NOT DONE YET</span>';
@@ -600,11 +656,18 @@ function renderEntryList() {
         aStr = '<span style="color:#D32F2F;font-weight:700;">0A</span>';
       }
 
+      var imageMeta = '';
+      if (!e.logged_at && (isTodo || isPrimaryDup)) {
+        imageMeta = '';
+      } else {
+        imageMeta = qLabel + ' ' + aStr + ' · ';
+      }
+
       html += dividerHtml + 
         '<div class="entry-item' + (isFollowedByDivider ? ' no-border' : '') + '">' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="entry-name ib-nav-link" data-url="' + (e.source_url || '') + '" data-qname="' + (e.question_name || '') + '" style="cursor:pointer; color:' + color + ';">' + (e.question_name || '—') + favIcon + todoBadge + dupBadge + '</div>' +
-          '<div class="entry-meta">' + currentCode + ' · ' + qLabel + ' ' + aStr + ' · ' + timeStr + '</div>' +
+          '<div class="entry-meta">' + currentCode + ' · ' + imageMeta + timeStr + '</div>' +
         '</div>' +
         '<button class="del-btn" data-name="' + (e.question_name || '') + '" data-subject="' + (e.subject || 'other') + '">✕</button>' +
       '</div>';

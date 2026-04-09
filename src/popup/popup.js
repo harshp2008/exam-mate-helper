@@ -9,6 +9,8 @@ window.IB.appSettings = {};
 window.IB.duplicatesDB = [];
 window.IB.credentialsValid = false; // tracks whether Firebase credentials passed validation
 window.IB.previousView = ''; // Tracks the previously active view
+window.IB.dbShowTodos = false;
+window.IB.dbShowDups = false;
 
 function useFirebase() {
   return window.IB.credentialsValid && window.IB.appSettings.mode === 'firebase' && window.IB.appSettings.firebaseApiKey && window.IB.appSettings.firebaseProjectId;
@@ -147,6 +149,32 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('log-all-btn').addEventListener('click', logAll);
 
   // DB panel
+  var dbFilterMenuBtn = document.getElementById('db-filter-menu-btn');
+  var dbFilterDropdown = document.getElementById('db-filter-dropdown');
+  if (dbFilterMenuBtn && dbFilterDropdown) {
+    dbFilterMenuBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      dbFilterDropdown.style.display = dbFilterDropdown.style.display === 'block' ? 'none' : 'block';
+    });
+    dbFilterDropdown.addEventListener('click', function(e) { e.stopPropagation(); });
+    document.addEventListener('click', function() { dbFilterDropdown.style.display = 'none'; });
+  }
+
+  var dbChkTodos = document.getElementById('db-chk-todos');
+  if (dbChkTodos) {
+    dbChkTodos.addEventListener('change', function() {
+      window.IB.dbShowTodos = this.checked;
+      if (typeof renderEntryList === 'function') renderEntryList();
+    });
+  }
+  var dbChkDups = document.getElementById('db-chk-dups');
+  if (dbChkDups) {
+    dbChkDups.addEventListener('change', function() {
+      window.IB.dbShowDups = this.checked;
+      if (typeof renderEntryList === 'function') renderEntryList();
+    });
+  }
+
   document.getElementById('sync-btn').addEventListener('click', function () { syncFromFirestore(false); });
   document.getElementById('export-btn').addEventListener('click', exportJSON);
   document.getElementById('clear-btn').addEventListener('click', clearAll);
