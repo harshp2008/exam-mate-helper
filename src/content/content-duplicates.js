@@ -446,6 +446,12 @@ function startScanInternal(isManual) {
             // Hard Stop: Same Paper conflict (Q1 vs Q2)
             if (itemA.meta.paper === itemB.meta.paper && itemA.meta.tz === itemB.meta.tz && itemA.meta.qNum !== itemB.meta.qNum) continue;
 
+            // 2. Already matched check
+            var alreadyMatch = existingGroups.find(function(g) {
+              return (g.questions || []).includes(itemA.entry.question_name) && (g.questions || []).includes(itemB.entry.question_name);
+            });
+            if (alreadyMatch) continue;
+
             var h1 = await getEntryHashes(itemA.entry), h2 = await getEntryHashes(itemB.entry);
             var bestHashSim = (h1[0] && h2[0]) ? (1 - (getHammingDistance(h1[0], h2[0]) / h1[0].length)) : 0;
             if (bestHashSim < 0.90) continue;
@@ -478,7 +484,7 @@ function startScanInternal(isManual) {
 
             // 2. Already matched check
             var alreadyMatch = existingGroups.find(function(g) {
-              return g.status !== 'ai-rejected' && (g.questions || []).includes(itemA.entry.question_name) && (g.questions || []).includes(itemB.entry.question_name);
+              return (g.questions || []).includes(itemA.entry.question_name) && (g.questions || []).includes(itemB.entry.question_name);
             });
             if (alreadyMatch) continue;
 

@@ -405,13 +405,12 @@ function renderDupsPanel() {
 
     return '<div class="dup-group-card" data-gidx="' + gi + '" data-gid="' + (g.id || '') + '">' +
       '<div class="dup-group-card-header">' +
-        '<span class="dup-group-primary-label">\u2605 Primary' + srcBadge + '</span>' +
+        '<span class="dup-group-primary-name ib-nav-link" data-qname="' + primary + '" data-url="' + findUrl(primary, qList) + '" data-open-dups="1" style="cursor:pointer; color:#185FA5; padding:0; text-transform:none; font-size:12px; font-weight:600;">\u2605 ' + primary + srcBadge + '</span>' +
         '<div style="display:flex;gap:5px;">' +
           '<button class="dup-group-edit-btn" data-gidx="' + gi + '">Edit</button>' +
           '<button class="dup-group-del-btn" data-gid="' + (g.id || '') + '" data-is-ai="' + (isAi?'1':'0') + '" title="Remove duplicate group" style="background:none;border:1px solid #f5c6c6;border-radius:5px;color:#A32D2D;cursor:pointer;padding:2px 7px;font-size:11px;">\uD83D\uDDD1</button>' +
         '</div>' +
       '</div>' +
-      '<div class="dup-group-primary-name ib-nav-link" data-qname="' + primary + '" data-url="' + findUrl(primary, qList) + '" data-open-dups="1" style="cursor:pointer; color:#185FA5;">' + primary + '</div>' +
       (others.length > 0 ?
         '<div class="dup-group-others">' +
           '<div class="dup-group-other-label">Other duplicates</div>' +
