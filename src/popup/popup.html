@@ -243,6 +243,8 @@
     .dup-save-btn:disabled { background: #aaa; cursor: not-allowed; }
     .dup-cancel-btn { padding: 8px 14px; background: #fff; color: #555; border: 1px solid #ddd; border-radius: 7px; font-size: 13px; cursor: pointer; }
     .dup-cancel-btn:hover { background: #f5f5f5; }
+    .dup-save-btn.inactive { background: #778ca3 !important; cursor: pointer; opacity: 0.8; }
+    .dup-save-btn.inactive:hover { background: #778ca3 !important; }
 
     /* Dups panel */
     .dups-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -498,6 +500,10 @@
       <div class="settings-row">
         <button class="db-action-btn" id="rerun-migration-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff;">↻ Re-run V2 Migration</button>
         <div class="settings-hint">Forces a deep cleanup and URL discovery sweep.</div>
+      </div>
+      <div class="settings-row" style="margin-top: 10px;">
+        <button class="db-action-btn" id="clean-dups-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff; color:#A32D2D; border-color:#f7c1c1;">🗑️ Clean Violating Dups</button>
+        <div class="settings-hint">Removes all duplicate groups that violate the strict nomenclature rule.</div>
       </div>
     </div>
 

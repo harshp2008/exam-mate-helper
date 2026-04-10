@@ -440,8 +440,14 @@ function startScanInternal(isManual) {
             var itemB = pageQueue[j];
             if (sessionProcessed.has(itemB.entry.question_name)) continue;
 
-            // Priority: Match only if same Subject/Year/Season/Paper
-            if (itemA.meta.subject !== itemB.meta.subject || itemA.meta.year !== itemB.meta.year || itemA.meta.season !== itemB.meta.season) continue;
+            // STRICT DUP CONSTRAINT: Dups for IB can only possibly happen when Subject Code, paper number, Season and Year are ALL the SAME.
+            // DO NOT MODIFY THIS RULE.
+            if (itemA.meta.subject !== itemB.meta.subject || 
+                itemA.meta.paper !== itemB.meta.paper || 
+                itemA.meta.season !== itemB.meta.season || 
+                itemA.meta.year !== itemB.meta.year) {
+              continue;
+            }
             
             // Hard Stop: Same Paper conflict (Q1 vs Q2)
             if (itemA.meta.paper === itemB.meta.paper && itemA.meta.tz === itemB.meta.tz && itemA.meta.qNum !== itemB.meta.qNum) continue;
@@ -472,6 +478,15 @@ function startScanInternal(isManual) {
           for (var j = 0; j < dbQueue.length; j++) {
             var itemB = dbQueue[j];
             if (sessionProcessed.has(itemB.entry.question_name)) continue;
+
+            // STRICT DUP CONSTRAINT: Dups for IB can only possibly happen when Subject Code, paper number, Season and Year are ALL the SAME.
+            // DO NOT MODIFY THIS RULE.
+            if (itemA.meta.subject !== itemB.meta.subject || 
+                itemA.meta.paper !== itemB.meta.paper || 
+                itemA.meta.season !== itemB.meta.season || 
+                itemA.meta.year !== itemB.meta.year) {
+              continue;
+            }
 
             // 1. Same-Paper Identity Check (Instruction: Prune duplicates in same paper)
             // If they share everything but have different QNums, they CANNOT be dups.

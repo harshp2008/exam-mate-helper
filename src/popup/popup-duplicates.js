@@ -4,6 +4,24 @@ window.IB = window.IB || {};
 
 // Current pending group being edited
 window.IB._dupGroup = { id: null, questions: [], primary: '' };
+window.IB._dupGroupOriginalStr = '';
+
+function getDupStateKey(group) {
+  // Only compare the 'input' fields: questions and primary
+  var qs = (group.questions || []).slice().sort();
+  return JSON.stringify({ q: qs, p: group.primary || '' });
+}
+
+function checkDupUnsavedChanges() {
+  var saveBtn = document.getElementById('dup-save-btn');
+  if (!saveBtn) return;
+  var currentKey = getDupStateKey(window.IB._dupGroup);
+  if (currentKey === window.IB._dupGroupOriginalStr) {
+    saveBtn.classList.add('inactive');
+  } else {
+    saveBtn.classList.remove('inactive');
+  }
+}
 
 // ── Open / Close modal ────────────────────────────────────────────────────────
 
@@ -51,6 +69,8 @@ window.IB.openDuplicateModal = function(target) {
   modal.classList.add('open');
   document.body.classList.add('ib-modal-open');
   document.getElementById('dup-search-input').focus();
+  window.IB._dupGroupOriginalStr = getDupStateKey(window.IB._dupGroup);
+  checkDupUnsavedChanges();
 };
 
 window.IB.closeDuplicateModal = function() {
@@ -89,6 +109,7 @@ function renderDupChips() {
       }
       renderDupChips();
       renderPrimaryDropdown();
+      checkDupUnsavedChanges();
       // Re-run search so removed question reappears in results
       runDupSearch(document.getElementById('dup-search-input').value);
     });
@@ -151,6 +172,7 @@ function addToDupGroup(name) {
   if (!window.IB._dupGroup.primary) window.IB._dupGroup.primary = name;
   renderDupChips();
   renderPrimaryDropdown();
+  checkDupUnsavedChanges();
   // Clear search UI
   document.getElementById('dup-search-input').value = '';
   document.getElementById('dup-search-results').innerHTML = '';
@@ -198,6 +220,11 @@ window.IB.saveDuplicateGroup = async function() {
     msgEl.className = 'inline-msg ' + type;
     msgEl.style.display = 'block';
     if (type === 'success') setTimeout(function() { msgEl.style.display = 'none'; }, 3000);
+  }
+
+  if (getDupStateKey(group) === window.IB._dupGroupOriginalStr) {
+    showDupMsg('error', 'No changes are needed to be made.');
+    return;
   }
 
   if (group.questions.length < 2) {
@@ -249,6 +276,8 @@ window.IB.saveDuplicateGroup = async function() {
     showDupMsg('success', '✓ Saved! ' + group.questions.length + ' questions linked.');
     renderDupChips();
     renderPrimaryDropdown();
+    window.IB._dupGroupOriginalStr = getDupStateKey(group);
+    checkDupUnsavedChanges();
 
     // Refresh open panels
     if (document.getElementById('panel-db') && document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
@@ -334,6 +363,7 @@ window.IB.initDuplicateModal = function() {
     primarySel.addEventListener('change', function() {
       window.IB._dupGroup.primary = this.value;
       renderDupChips();
+      checkDupUnsavedChanges();
     });
   }
 

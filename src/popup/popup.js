@@ -196,6 +196,23 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!confirm('Re-run the V2 migration? This will perform a deep cleanup and URL discovery sweep. Your duplicate groups will stay, but their data will be optimized.')) return;
     await window.IB.startFullMigration(true);
   });
+  document.getElementById('clean-dups-btn').addEventListener('click', function() {
+    if (!confirm('Clean violating duplicates? This will remove all duplicate groups that violate the strict nomenclature rule.')) return;
+    var btn = this;
+    var originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⌛ Cleaning...';
+    chrome.runtime.sendMessage({ action: 'cleanViolatingDups' }, function(res) {
+       btn.disabled = false;
+       btn.innerHTML = originalText;
+       if (res && res.ok) {
+         if (typeof showMsg === 'function') showMsg('success', 'Cleaned ' + (res.removedCount || 0) + ' violating groups.');
+         setTimeout(function() { window.location.reload(); }, 1500);
+       } else {
+         if (typeof showMsg === 'function') showMsg('error', 'Error cleaning groups.');
+       }
+    });
+  });
 
   // Load cache, update sync btn state, populate settings
   window.IB.allEntries = await window.IB.loadCache();

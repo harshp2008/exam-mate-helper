@@ -216,32 +216,30 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'toggleFavouriteFromPage') {
     (async function () {
+      //... logic remains
       var settings = await getSettings();
       var entries = await loadCache();
       var name = request.question_name;
       var ex = entries.find(function (e) { return e.question_name === name; });
 
       if (request.isFav) {
-        // Remove favourite — if also done, keep in DB with is_favourite=false; else remove
         if (ex) {
           ex.is_favourite = false;
-          delete ex.repeated_question; // V2 PURGE
+          delete ex.repeated_question;
           await saveCache(entries);
           if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
             try { await fsWrite(settings, ex); } catch (e) { }
           }
         }
       } else {
-        // Add favourite — upsert entry with is_favourite=true
         var entry = request.entryData;
         entry.is_favourite = true;
         if (ex) {
-
-          if (ex.todo_date) entry.todo_date = ex.todo_date; // preserve to-do state
-          if (ex.logged_at) entry.logged_at = ex.logged_at; // preserve done state
+          if (ex.todo_date) entry.todo_date = ex.todo_date;
+          if (ex.logged_at) entry.logged_at = ex.logged_at;
           entries = entries.filter(function (e) { return e.question_name !== name; });
         }
-        delete entry.repeated_question; // V2 PURGE
+        delete entry.repeated_question;
         entries.unshift(entry);
         await saveCache(entries);
         if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
@@ -251,6 +249,39 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       sendResponse({ ok: true });
     })();
     return true;
+  }
+
+  // Helper function to remove orphaned questions (0Q 0A, not done, not fav, not to-do, not in any dup group)
+  async function cleanOrphansAndSync(entries, groups, settings) {
+    var inDupGroups = new Set();
+    groups.forEach(function(g) {
+      if (g.status !== 'ai-rejected') {
+        (g.questions || []).forEach(function(q) { inDupGroups.add(q); });
+      }
+    });
+
+    var newEntries = [];
+    var orphansFound = false;
+    
+    for (var i = 0; i < entries.length; i++) {
+       var e = entries[i];
+       if (e.logged_at || e.is_favourite || e.todo_date || inDupGroups.has(e.question_name)) {
+         newEntries.push(e);
+       } else {
+         orphansFound = true;
+         if (settings.mode === 'firebase' && settings.firebaseApiKey) {
+           try { await fsDelete(settings, e.subject || 'other', e.question_name); } catch(err){}
+         }
+       }
+    }
+    
+    if (orphansFound) {
+       await saveCache(newEntries);
+    } else {
+       await saveCache(entries); // preserve any changes made to entries prior to calling this
+    }
+    await saveDuplicates(groups);
+    if (typeof markAllExamMateTabs !== 'undefined') await markAllExamMateTabs();
   }
 
   if (request.action === 'saveDuplicateGroup') {
@@ -281,31 +312,44 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         return false;
       }
 
-      // 2. Check for overlap with existing groups to perform MERGING
-      var existingGroup = null;
-      for (var i = 0; i < groups.length; i++) {
-        var g = groups[i];
-        if (g.status === 'ai-rejected') continue;
-        var hasOverlap = (g.questions || []).some(function(q) { return newNames.includes(q); });
-        if (hasOverlap) {
-          existingGroup = g;
-          break;
+      // 2. Find group by ID first for direct updates
+      var existingGroup = groups.find(function(g) { return g.id === newGroup.id; });
+      var isDirectUpdate = !!existingGroup;
+
+      if (!existingGroup) {
+        // Check for overlap to perform MERGING if no exact ID match
+        for (var i = 0; i < groups.length; i++) {
+          var g = groups[i];
+          if (g.status === 'ai-rejected') continue;
+          var hasOverlap = (g.questions || []).some(function(q) { return newNames.includes(q); });
+          if (hasOverlap) {
+            existingGroup = g;
+            break;
+          }
         }
       }
 
       var finalGroup;
       if (existingGroup) {
-        // MERGE: Add new names to existing group, but CHECK FOR CONFLICT FIRST
-        var mergedSet = new Set(existingGroup.questions || []);
-        newNames.forEach(function(n) { mergedSet.add(n); });
-        var mergedList = Array.from(mergedSet);
+        var mergedList;
+        if (isDirectUpdate) {
+          // User explicitly updating a group (can add or remove items)
+          mergedList = newNames.slice();
+        } else {
+          // MERGE: Add new names to existing group, but CHECK FOR CONFLICT FIRST
+          var mergedSet = new Set(existingGroup.questions || []);
+          newNames.forEach(function(n) { mergedSet.add(n); });
+          mergedList = Array.from(mergedSet);
+        }
         
         if (checkConflict(mergedList)) {
-          console.log('[IB Cache] Merge rejected due to paper conflict (expected for non-duplicates):', mergedList);
+          console.log('[IB Cache] Merge/Update rejected due to paper conflict:', mergedList);
           sendResponse({ ok: false, error: 'conflict' });
           return;
         }
         existingGroup.questions = mergedList;
+        existingGroup.primary = newGroup.primary || existingGroup.primary;
+        if (newGroup.status) existingGroup.status = newGroup.status;
         
         // Merge URLs
         if (!existingGroup.urls) existingGroup.urls = {};
@@ -333,7 +377,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         finalGroup = newGroup;
       }
 
-      // 2. Sync entries data (log status, favs, topics)
+      // Sync entries data
       var primary = finalGroup.primary || finalGroup.questions[0] || '';
       finalGroup.questions.forEach(function(name) {
         var isPrimary = (name === primary);
@@ -358,14 +402,11 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         }
       });
 
-      await saveCache(entries);
-      await saveDuplicates(groups);
-
       if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
         try { await fsWriteDupGroup(settings, finalGroup); } catch(e) {}
       }
 
-      if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
+      await cleanOrphansAndSync(entries, groups, settings);
       sendResponse({ ok: true, merged: !!existingGroup });
     })();
     return true;
@@ -397,11 +438,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         });
       }
 
-      await saveCache(entries);
-      await saveDuplicates(groups);
-
-      // V2: Trigger instantaneous sidebar refresh
-      if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
+      // Trigger orphan cleaning + sync
+      await cleanOrphansAndSync(entries, groups, settings);
 
       sendResponse({ ok: true });
     })();
@@ -454,6 +492,68 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
       if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
       sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
+  if (request.action === 'cleanViolatingDups') {
+    (async function() {
+      var settings = await getSettings();
+      var groups = await loadDuplicates();
+      var entries = await loadCache();
+      
+      var initialLength = groups.length;
+      var remainingGroups = [];
+      
+      function parseSimpleIB(n) {
+        var m = (n || '').match(/^([A-Z]+)[\/ \-_]?(\d)?(\d)[_ ]?([A-Z0-9]*)[_ ]?([A-Za-z]+)[_ ]?(\d{4})[_ ]?Q?(\d+)$/i);
+        if (m) return { s:m[1].toUpperCase(), p:m[2]||'', tz:m[3], sea:m[5].toLowerCase(), yr:m[6], q:m[7] };
+        return null;
+      }
+      
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        if (g.status === 'ai-rejected') {
+          remainingGroups.push(g);
+          continue;
+        }
+        
+        var isViolating = false;
+        var qs = g.questions || [];
+        if (qs.length > 1) {
+          for (var j = 0; j < qs.length; j++) {
+             for (var k = j+1; k < qs.length; k++) {
+               var p1 = parseSimpleIB(qs[j]), p2 = parseSimpleIB(qs[k]);
+               if (p1 && p2) {
+                 if (p1.s !== p2.s || p1.p !== p2.p || p1.sea !== p2.sea || p1.yr !== p2.yr) {
+                   isViolating = true;
+                   break;
+                 }
+               }
+             }
+             if (isViolating) break;
+          }
+        }
+        
+        if (isViolating) {
+          if (settings.mode === 'firebase') {
+             try { await fsDeleteDupGroup(settings, g.id); } catch(e) {}
+          }
+          // Strip repeated_question from associated entries just in case
+          qs.forEach(function(name) {
+            var ex = entries.find(function(e) { return e.question_name === name; });
+            if (ex) delete ex.repeated_question;
+          });
+        } else {
+          remainingGroups.push(g);
+        }
+      }
+      
+      if (remainingGroups.length < initialLength) {
+         await cleanOrphansAndSync(entries, remainingGroups, settings);
+      }
+      
+      sendResponse({ ok: true, removedCount: initialLength - remainingGroups.length });
     })();
     return true;
   }
