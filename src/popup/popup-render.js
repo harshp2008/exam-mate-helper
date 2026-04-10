@@ -637,7 +637,7 @@ function renderEntryList() {
       var todoBadge = '';
       if (isTodo) {
          todoBadge = e.logged_at 
-           ? '<span class="db-todo-badge" style="background:#E1F5EE;color:#0F6E56;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600;">✅ completed</span>'
+           ? '<span class="db-todo-badge" style="background:#E1F5EE;color:#0F6E56;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600;">✅ completed to-do</span>'
            : '<span class="db-todo-badge" style="background:#FFF3E0;color:#E65100;font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600;">📝 to-do</span>';
       }
       var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
