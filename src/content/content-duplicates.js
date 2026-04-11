@@ -425,6 +425,7 @@ function startScanInternal(isManual) {
             chrome.runtime.sendMessage({ action: 'saveDuplicateGroup', group: dupGroup }, function(saveRes) {
               if (saveRes && saveRes.ok) console.log('[IB] Auto-duplicate saved.');
               else if (saveRes && saveRes.error === 'conflict') console.log('[IB Auto-Dup] Group merge rejected due to QNum conflict (Same paper sanity check).');
+              else if (saveRes && saveRes.error === 'user_protected') console.log('[IB Auto-Dup] Group merge rejected to protect USER manual edits.');
               resolve();
             });
           });

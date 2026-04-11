@@ -337,6 +337,12 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           mergedList = newNames.slice();
         } else {
           // MERGE: Add new names to existing group, but CHECK FOR CONFLICT FIRST
+          // Block AI from merging into a USER protected group (prevents AI re-adding removed questions)
+          if (existingGroup.status === 'user' && newGroup.status === 'ai') {
+             console.log('[IB Cache] AI overlap merge blocked to protect USER manual edits.');
+             sendResponse({ ok: false, error: 'user_protected' });
+             return;
+          }
           var mergedSet = new Set(existingGroup.questions || []);
           newNames.forEach(function(n) { mergedSet.add(n); });
           mergedList = Array.from(mergedSet);
