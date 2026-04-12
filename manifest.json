@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Exammate Helper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The ultimate companion for ExamMate. Cleans up UI clutter, tracks completed questions, manages favourites, and syncs your IB progress to the cloud.",
   "permissions": [
     "activeTab",
