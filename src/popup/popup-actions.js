@@ -19,8 +19,7 @@ async function markDoneOnPage() {
       .map(function (e) { return e.question_name; });
       
     var today = new Date().toISOString().split('T')[0];
-    var todoNames = window.IB.allEntries
-      .filter(function (e) { return e.todo_date === today; })
+    var todoNames = window.IB.allTodos
       .map(function (e) { return e.question_name; });
 
     // V2 FIX: Also calculate and send dupInfo to update sidebar icons
@@ -75,12 +74,19 @@ async function syncFromFirestore(silent) {
   }
   if (syncBtn) { syncBtn.textContent = 'Syncing...'; syncBtn.disabled = true; }
   try {
+    // ── PULL: Fetch all remote data ────────────────────────────────────────────
     var remoteEntries = await window.IB.fsReadAll();
+    var remoteTodos   = await window.IB.fsReadAllTodos();
+    var remoteDups    = await window.IB.fsReadAllDupGroups();
+
+    // ── MERGE: Combine remote + local (remote wins on conflict) ───────────────
     window.IB.allEntries = window.IB.mergeEntries(remoteEntries, window.IB.allEntries);
     await window.IB.saveCache(window.IB.allEntries);
-    
-    var remoteDups = await window.IB.fsReadAllDupGroups();
-    // Merge duplicates: remote wins on ID match
+
+    window.IB.allTodos = window.IB.mergeTodos(remoteTodos, window.IB.allTodos);
+    await window.IB.saveTodos(window.IB.allTodos);
+
+    var remoteIdSet = new Set(remoteDups.map(function(g) { return g.id; }));
     var localDups = window.IB.duplicatesDB || [];
     remoteDups.forEach(function(rg) {
       var idx = localDups.findIndex(function(lg) { return lg.id === rg.id; });
@@ -89,7 +95,42 @@ async function syncFromFirestore(silent) {
     window.IB.duplicatesDB = localDups;
     await window.IB.saveDuplicates(window.IB.duplicatesDB);
 
-    if (!silent) showMsg('success', 'Synced ' + remoteEntries.length + ' questions and ' + remoteDups.length + ' duplicates.');
+    // ── PUSH: Upload any local-only items missing from Firebase ───────────────
+    var remoteEntryNames = new Set(remoteEntries.map(function(e) { return e.question_name; }));
+    var pushEntries = 0;
+    for (var i = 0; i < window.IB.allEntries.length; i++) {
+      var e = window.IB.allEntries[i];
+      if (!remoteEntryNames.has(e.question_name)) {
+        try { await window.IB.fsWrite(e); pushEntries++; } catch(_) {}
+      }
+    }
+
+    var remoteTodoNames = new Set(remoteTodos.map(function(t) { return t.question_name; }));
+    var pushTodos = 0;
+    for (var j = 0; j < window.IB.allTodos.length; j++) {
+      var t = window.IB.allTodos[j];
+      if (!remoteTodoNames.has(t.question_name)) {
+        try { await window.IB.fsWriteTodo(t); pushTodos++; } catch(_) {}
+      }
+    }
+
+    var pushDups = 0;
+    for (var k = 0; k < window.IB.duplicatesDB.length; k++) {
+      var g = window.IB.duplicatesDB[k];
+      if (!remoteIdSet.has(g.id)) {
+        try { await window.IB.fsWriteDupGroup(g); pushDups++; } catch(_) {}
+      }
+    }
+
+    // ── UI REFRESH ─────────────────────────────────────────────────────────────
+    if (!silent) {
+      var msg = 'Synced: ' + remoteEntries.length + ' questions, ' +
+                window.IB.allTodos.length + ' todos, ' + remoteDups.length + ' dup groups';
+      if (pushEntries + pushTodos + pushDups > 0) {
+        msg += ' · Pushed ' + (pushEntries + pushTodos + pushDups) + ' local-only item(s)';
+      }
+      showMsg('success', msg);
+    }
     if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
     if (document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
     if (document.getElementById('panel-favourites').classList.contains('active')) renderFavouritesPanel();
@@ -174,7 +215,6 @@ async function logAll() {
       try {
         var ex = window.IB.allEntries.find(function (e) { return e.question_name === q.question_name; });
         if (ex) {
-
           if (ex.is_favourite) q.is_favourite = ex.is_favourite; // preserve fav state
         }
         var isNew = !window.IB.allEntries.some(function (e) { return e.question_name === q.question_name; });
@@ -198,37 +238,25 @@ async function logAll() {
 // ── Export / Clear ────────────────────────────────────────────────────────────
 
 function exportJSON() {
-  if (window.IB.allEntries.length === 0 && (window.IB.duplicatesDB || []).length === 0) {
+  if (window.IB.allEntries.length === 0 && (window.IB.duplicatesDB || []).length === 0 && window.IB.allTodos.length === 0) {
     showMsg('error', 'Nothing to export yet.');
     return;
   }
   
-  var grouped = {};
+  var dbRoot = {
+    duplicates: window.IB.duplicatesDB || [],
+    todos: window.IB.allTodos || [],
+    subjects: {}
+  };
   
-  // 1. Group question entries
+  // Group question entries into subjects
   window.IB.allEntries.forEach(function (e) {
     var s = e.subject || 'other';
-    if (!grouped[s]) grouped[s] = { PYQS: [], duplicates: [] };
-    grouped[s].PYQS.push(e);
+    if (!dbRoot.subjects[s]) dbRoot.subjects[s] = { PYQS: [] };
+    dbRoot.subjects[s].PYQS.push(e);
   });
   
-  // 2. Group duplicate groups
-  var dups = window.IB.duplicatesDB || [];
-  dups.forEach(function (g) {
-    var firstQ = g.primary || (g.questions && g.questions[0]) || '';
-    var s = 'other';
-    var u = firstQ.toUpperCase();
-    if (u.includes('CHEMI')) s = 'chemistry';
-    else if (u.includes('PHYSI') || u.includes('PHYS')) s = 'physics';
-    else if (u.includes('MATH')) s = 'mathematics';
-    else if (u.includes('BIOL') || u.includes('BIO')) s = 'biology';
-    
-    if (!grouped[s]) grouped[s] = { PYQS: [], duplicates: [] };
-    if (!grouped[s].duplicates) grouped[s].duplicates = [];
-    grouped[s].duplicates.push(g);
-  });
-  
-  var blob = new Blob([JSON.stringify(grouped, null, 2)], { type: 'application/json' });
+  var blob = new Blob([JSON.stringify(dbRoot, null, 2)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
@@ -239,8 +267,13 @@ function exportJSON() {
 
 async function clearAll() {
   if (!confirm('Delete ALL ' + window.IB.allEntries.length + ' questions? Cannot be undone.')) return;
-  if (useFirebase()) { for (var i = 0; i < window.IB.allEntries.length; i++) { try { await window.IB.fsDelete(window.IB.allEntries[i].subject, window.IB.allEntries[i].question_name); } catch (_) { } } }
-  window.IB.allEntries = []; await window.IB.saveCache([]); await markDoneOnPage(); renderDBPanel();
+  if (useFirebase()) { 
+    for (var i = 0; i < window.IB.allEntries.length; i++) { try { await window.IB.fsDelete(window.IB.allEntries[i].subject, window.IB.allEntries[i].question_name); } catch (_) { } }
+    for (var j = 0; j < window.IB.allTodos.length; j++) { try { await window.IB.fsDeleteTodo(window.IB.allTodos[j].question_name); } catch (_) { } }
+  }
+  window.IB.allEntries = []; await window.IB.saveCache([]); 
+  window.IB.allTodos = []; await window.IB.saveTodos([]);
+  await markDoneOnPage(); renderDBPanel();
   showMsg('success', 'All cleared.');
 }
 

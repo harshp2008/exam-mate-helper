@@ -56,6 +56,12 @@ function dupListUrl(settings, pt) {
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 }
+function todoDocUrl(settings, qname) { return fsBase(settings) + '/todos/' + safeId(qname) + '?key=' + settings.firebaseApiKey; }
+function todoListUrl(settings, pt) {
+  var url = fsBase(settings) + '/todos?key=' + settings.firebaseApiKey + '&pageSize=300';
+  if (pt) url += '&pageToken=' + encodeURIComponent(pt);
+  return url;
+}
 async function fsWriteDupGroup(settings, group) {
   var r = await fetch(dupGroupUrl(settings, group.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(group)) });
   if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed'); }
@@ -83,6 +89,26 @@ async function fsDelete(settings, subject, qname) {
   if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
 }
 
+async function fsWriteTodo(settings, todo) {
+  var r = await fetch(todoDocUrl(settings, todo.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(todo)) });
+  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Todo write failed'); }
+}
+async function fsDeleteTodo(settings, qname) {
+  var r = await fetch(todoDocUrl(settings, qname), { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('Todo delete failed (' + r.status + ')');
+}
+async function fsReadAllTodos(settings) {
+  var results = [], pt = null;
+  do {
+    var r = await fetch(todoListUrl(settings, pt));
+    if (!r.ok) { if (r.status === 404) break; var e = await r.json(); throw new Error('Todo read failed: ' + (e.error && e.error.message ? e.error.message : r.status)); }
+    var d = await r.json();
+    if (d.documents) d.documents.forEach(function (doc) { results.push(fromFS(doc)); });
+    pt = d.nextPageToken || null;
+  } while (pt);
+  return results;
+}
+
 async function fsReadAll(settings) {
   var results = [];
   for (var i = 0; i < KNOWN_SUBJECTS.length; i++) {
@@ -101,10 +127,41 @@ async function fsReadAll(settings) {
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
 async function loadCache() {
-  try { var s = await chrome.storage.local.get([CACHE_KEY]); return s[CACHE_KEY] || []; } catch (e) { return []; }
+  try { 
+    var s = await chrome.storage.local.get([CACHE_KEY, 'ib_todos_cache']); 
+    var entries = s[CACHE_KEY] || []; 
+    var todos = s['ib_todos_cache'] || [];
+    var dirty = false;
+    for (var i = 0; i < entries.length; i++) {
+        if (entries[i].todo_date) {
+            if (!todos.some(function(t) { return t.question_name === entries[i].question_name; })) {
+                todos.push({
+                    question_name: entries[i].question_name,
+                    subject: entries[i].subject || window.IB.KNOWN_SUBJECTS[window.IB.KNOWN_SUBJECTS.length - 1],
+                    source_url: entries[i].source_url || '',
+                    page_num: entries[i].page_num || 1,
+                    todo_date: entries[i].todo_date,
+                    logged_at: entries[i].logged_at || new Date().toISOString().replace('T', ' ').substring(0, 19)
+                });
+            }
+            delete entries[i].todo_date;
+            dirty = true;
+        }
+    }
+    if (dirty) {
+        await chrome.storage.local.set({ [CACHE_KEY]: entries, ib_todos_cache: todos });
+    }
+    return entries; 
+  } catch (e) { return []; }
 }
 async function saveCache(entries) {
   try { await chrome.storage.local.set({ [CACHE_KEY]: entries }); } catch (e) { }
+}
+async function loadTodos() {
+  try { var s = await chrome.storage.local.get(['ib_todos_cache']); return s['ib_todos_cache'] || []; } catch (e) { return []; }
+}
+async function saveTodos(todos) {
+  try { await chrome.storage.local.set({ ib_todos_cache: todos }); } catch (e) { }
 }
 async function loadDuplicates() {
   try { var s = await chrome.storage.local.get(['ib_duplicates_cache']); return s['ib_duplicates_cache'] || []; } catch (e) { return []; }
@@ -122,11 +179,25 @@ async function getSettings() {
   try { var s = await chrome.storage.local.get([SETTINGS_KEY]); return s[SETTINGS_KEY] || {}; } catch (e) { return {}; }
 }
 
+// Note: e.todo_date is removed, do not merge it back.
 function mergeEntries(remote, local) {
   var map = {};
   remote.forEach(function (e) { map[e.question_name] = e; });
-  local.forEach(function (e) { if (!map[e.question_name]) map[e.question_name] = e; });
+  local.forEach(function (e) { 
+    if (!map[e.question_name]) {
+      map[e.question_name] = e; 
+    } else {
+      if (e.is_favourite && !map[e.question_name].is_favourite) map[e.question_name].is_favourite = e.is_favourite;
+    }
+  });
   var arr = Object.values(map);
   arr.sort(function (a, b) { return (b.logged_at || '').localeCompare(a.logged_at || ''); });
   return arr;
+}
+
+function mergeTodos(remote, local) {
+  var map = {};
+  remote.forEach(function(e) { map[e.question_name] = e; });
+  local.forEach(function(e) { if (!map[e.question_name]) map[e.question_name] = e; });
+  return Object.values(map);
 }

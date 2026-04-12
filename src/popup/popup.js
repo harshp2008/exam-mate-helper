@@ -4,6 +4,7 @@ window.IB = window.IB || {};
 
 window.IB.currentData = null;
 window.IB.allEntries = [];
+window.IB.allTodos = [];
 window.IB.sidebarQuestions = [];
 window.IB.appSettings = {};
 window.IB.duplicatesDB = [];
@@ -58,11 +59,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('btn-dups-view').addEventListener('click', function () { switchView('dups'); });
   document.getElementById('dup-modal-close-btn').addEventListener('click', window.IB.closeDuplicateModal);
 
-  // Trigger new group modal from Dups panel toolbar
-  document.getElementById('dups-new-btn').addEventListener('click', function () {
-    var currentQ = window.IB.currentData ? window.IB.currentData.question_name : '';
-    window.IB.openDuplicateModal(currentQ);
-  });
+  // "+ New Group" button is disabled — users should use the 🔗 Dup sidebar button on ExamMate instead.
+  // document.getElementById('dups-new-btn').addEventListener('click', ...);
 
   document.getElementById('dups-rescan-btn').addEventListener('click', async function() {
     var btn = this;
@@ -216,6 +214,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   // Load cache, update sync btn state, populate settings
   window.IB.allEntries = await window.IB.loadCache();
+  window.IB.allTodos = await window.IB.loadTodos();
   window.IB.duplicatesDB = await window.IB.loadDuplicates();
   updateSyncBtnState();
   populateSettingsUI();

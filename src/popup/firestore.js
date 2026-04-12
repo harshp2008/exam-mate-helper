@@ -55,6 +55,12 @@ window.IB.dupListUrl = function(pt) {
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 };
+window.IB.todoDocUrl = function(qname) { return window.IB.fsBase() + '/todos/' + window.IB.safeId(qname) + '?key=' + window.IB.appSettings.firebaseApiKey; };
+window.IB.todoListUrl = function(pt) {
+  var url = window.IB.fsBase() + '/todos?key=' + window.IB.appSettings.firebaseApiKey + '&pageSize=300';
+  if (pt) url += '&pageToken=' + encodeURIComponent(pt);
+  return url;
+};
 
 // ── Firestore converters ──────────────────────────────────────────────────────
 
@@ -115,6 +121,28 @@ window.IB.fsReadAllDupGroups = async function() {
 window.IB.fsDelete = async function(subject, qname) {
   var r = await fetch(window.IB.qDocUrl(subject, qname), { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
+};
+
+window.IB.fsWriteTodo = async function(todo) {
+  var r = await fetch(window.IB.todoDocUrl(todo.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(window.IB.toFS(todo)) });
+  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Todo write failed (' + r.status + ')'); }
+};
+
+window.IB.fsDeleteTodo = async function(qname) {
+  var r = await fetch(window.IB.todoDocUrl(qname), { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('Todo delete failed (' + r.status + ')');
+};
+
+window.IB.fsReadAllTodos = async function() {
+  var results = [], pt = null;
+  do {
+    var r = await fetch(window.IB.todoListUrl(pt));
+    if (!r.ok) { if (r.status === 404) break; var e = await r.json(); throw new Error('Todo read failed: ' + (e.error && e.error.message ? e.error.message : r.status)); }
+    var d = await r.json();
+    if (d.documents) d.documents.forEach(function(doc) { results.push(window.IB.fromFS(doc)); });
+    pt = d.nextPageToken || null;
+  } while (pt);
+  return results;
 };
 
 window.IB.fsReadAll = async function() {

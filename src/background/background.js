@@ -13,10 +13,10 @@ try {
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(function () {
-  chrome.alarms.create('auto-sync', { periodInMinutes: 3 });
+  chrome.alarms.create('auto-sync', { periodInMinutes: 1 });
 });
 chrome.runtime.onStartup.addListener(function () {
-  chrome.alarms.create('auto-sync', { periodInMinutes: 3 });
+  chrome.alarms.create('auto-sync', { periodInMinutes: 1 });
 });
 
 
@@ -26,37 +26,89 @@ chrome.alarms.onAlarm.addListener(function (alarm) {
   if (alarm.name === 'auto-sync') autoSync();
 });
 
+var isSyncing = false;
+
 async function autoSync() {
+  if (isSyncing) return;
+  isSyncing = true;
   var settings = await getSettings();
   if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
     try {
       // 1. Sync Entries
       var remoteEntries = await fsReadAll(settings);
+      var localEntries = await loadCache();
       var merged = mergeEntries(remoteEntries, localEntries);
       merged.forEach(function(e) { delete e.repeated_question; }); // V2 PURGE: ensure sync stays clean
       await saveCache(merged);
       
+      // 1b. Sync Todos
+      var remoteTodos = await fsReadAllTodos(settings);
+      var localTodos = await loadTodos();
+      var mergedTodos = mergeTodos(remoteTodos, localTodos);
+      await saveTodos(mergedTodos);
+      
       // 2. Sync Duplicates
       var remoteDups = await fsReadAllDupGroups(settings);
       var localDups = await loadDuplicates();
-      // Remote wins on ID match
+      // Merge Duplicates
+      var mergedDups = localDups.slice();
       remoteDups.forEach(function(rg) {
-        var idx = localDups.findIndex(function(lg) { return lg.id === rg.id; });
-        if (idx !== -1) localDups[idx] = rg; else localDups.push(rg);
+        var idx = mergedDups.findIndex(function(lg) { return lg.id === rg.id; });
+        if (idx !== -1) mergedDups[idx] = rg; else mergedDups.push(rg);
       });
-      await saveDuplicates(localDups);
+      await saveDuplicates(mergedDups);
+
+      // 3. DIFFERENTIAL PUSH (Local -> Remote)
+      // Push entries that are new or modified locally
+      for (var i = 0; i < merged.length; i++) {
+        var e = merged[i];
+        var r = remoteEntries.find(re => re.question_name === e.question_name);
+        if (!r || r.is_favourite !== e.is_favourite || r.logged_at !== e.logged_at || r.source_url !== e.source_url) {
+          try { await fsWrite(settings, e); } catch (_) {}
+        }
+      }
+
+      // Push todos that are new locally
+      for (var k = 0; k < mergedTodos.length; k++) {
+        var t = mergedTodos[k];
+        var rt = remoteTodos.find(re => re.question_name === t.question_name);
+        if (!rt) {
+          try { await fsWriteTodo(settings, t); } catch (_) {}
+        }
+      }
+
+      // Push duplicates that are new or modified locally
+      for (var j = 0; j < mergedDups.length; j++) {
+        var lg = mergedDups[j];
+        var rg = remoteDups.find(g => g.id === lg.id);
+        if (!rg || rg.status !== lg.status || lg.questions.length !== (rg.questions || []).length || lg.primary !== rg.primary) {
+          try { await fsWriteDupGroup(settings, lg); } catch (_) {}
+        }
+      }
+
     } catch (e) {
       console.log('IB Logger auto-sync failed:', e.message);
     }
   }
   await markAllExamMateTabs();
+  isSyncing = false;
 }
 
 // ── Tab watching ──────────────────────────────────────────────────────────────
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('exam-mate.com')) {
-    setTimeout(function () { markTab(tabId); }, 800);
+    setTimeout(function () { autoSync(); }, 800);
+  }
+});
+
+chrome.tabs.onRemoved.addListener(async function (tabId, removeInfo) {
+  if (removeInfo.isWindowClosing) {
+    autoSync();
+  } else {
+    // We cannot reliably read the url of a removed tab without caching, 
+    // but running an autoSync on any tab close is cheap enough if we are locked and debounced
+    autoSync();
   }
 });
 
@@ -71,13 +123,13 @@ async function markAllExamMateTabs() {
 
 async function markTab(tabId) {
   var entries = await loadCache();
+  var todos = await loadTodos();
   var allGroups = await loadDuplicates();
   var groups = allGroups.filter(function(g) { return g.status !== 'ai-rejected'; });
   var rejectedGroups = allGroups.filter(function(g) { return g.status === 'ai-rejected'; });
-  var today = new Date().toISOString().split('T')[0];
   var favNames = entries.filter(function (e) { return e.is_favourite === true; }).map(function (e) { return e.question_name; });
   var allNames = entries.filter(function (e) { return e.logged_at !== null; }).map(function (e) { return e.question_name; });
-  var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
+  var todoNames = todos.map(function(t) { return t.question_name; });
   // Build dupInfo: name -> { is_primary, linked_questions, primary_name }
   var dupInfo = {};
   groups.forEach(function(g) {

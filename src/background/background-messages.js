@@ -6,13 +6,12 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'getTodoPages') {
     (async function() {
-      var entries = await loadCache();
-      var today = new Date().toISOString().split('T')[0];
+      var todos = await loadTodos();
       
       var stats = {}; 
       
-      entries.forEach(function(e) {
-        if (e.todo_date === today && e.source_url) {
+      todos.forEach(function(e) {
+        if (e.source_url) {
           var subj = e.subject || 'other';
           var isSolved = e.logged_at !== null;
           
@@ -60,10 +59,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         groups = await loadDuplicates();
       }
 
-      var today = new Date().toISOString().split('T')[0];
+      var todos = await loadTodos();
       var doneNames = entries.filter(function(e) { return e.logged_at !== null; }).map(function(e) { return e.question_name; });
       var favNames = entries.filter(function(e) { return e.is_favourite; }).map(function(e) { return e.question_name; });
-      var todoNames = entries.filter(function(e) { return e.todo_date === today; }).map(function(e) { return e.question_name; });
+      var todoNames = todos.map(function(t) { return t.question_name; });
       
       var dupInfo = {};
       var rejectedGroups = [];
@@ -125,9 +124,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'getDupData') {
     (async function() {
       var entries = await loadCache();
+      var todos = await loadTodos();
       var groups = await loadDuplicates();
       var rejectedGroups = await loadRejectedGroups();
-      sendResponse({ entries: entries, groups: groups, rejectedGroups: rejectedGroups });
+      sendResponse({ entries: entries, todos: todos, groups: groups, rejectedGroups: rejectedGroups });
     })();
     return true;
   }
@@ -135,42 +135,62 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'updateTodoQueue') {
     (async function() {
       var settings = await getSettings();
-      var entries = await loadCache();
-      var today = new Date().toISOString().split('T')[0];
+      var todos = await loadTodos();
+      var today = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      var useFirebase = settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId;
 
       var addSet = new Set(request.add || []);
       var removeSet = new Set(request.remove || []);
 
-      entries.forEach(function(entry) {
-        if (addSet.has(entry.question_name)) {
-          entry.todo_date = today;
-          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-            fsWrite(settings, entry).catch(function() {});
+      // STEP 1: Remove any unchecked todos from local cache and Firebase
+      if (removeSet.size > 0) {
+        todos = todos.filter(function(t) { 
+          if (removeSet.has(t.question_name)) {
+            if (useFirebase) fsDeleteTodo(settings, t.question_name).catch(function(){});
+            return false;
           }
-        }
-        if (removeSet.has(entry.question_name)) {
-          entry.todo_date = null;
-          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-            fsWrite(settings, entry).catch(function() {});
-          }
-        }
-      });
+          return true;
+        });
+      }
 
+      // STEP 2: Add todos for questions that ARE already in the main PYQS cache.
+      // FIX: Previously these names were collected but never iterated to create todo objects.
+      if (addSet.size > 0) {
+        var entries = await loadCache();
+        addSet.forEach(function(name) {
+          if (todos.some(function(t) { return t.question_name === name; })) return; // already in queue
+          var entry = entries.find(function(e) { return e.question_name === name; });
+          var newTodo = {
+            question_name: name,
+            subject: (entry && entry.subject) ? entry.subject : 'other',
+            source_url: (entry && entry.source_url) ? entry.source_url : '',
+            page_num: (entry && entry.page_num) ? entry.page_num : 1,
+            added_at: today
+          };
+          todos.unshift(newTodo);
+          if (useFirebase) fsWriteTodo(settings, newTodo).catch(function() {});
+        });
+      }
+
+      // STEP 3: Add todos for NEW questions not yet in cache (full entry data provided).
+      // FIX: Previously gated by addSet.has() which was always empty when addWithData was used,
+      // silently dropping every new question. Now fully independent of addSet.
       var unlogged = request.addWithData || [];
       unlogged.forEach(function(entryData) {
-        var exists = entries.some(function(e) { return e.question_name === entryData.question_name; });
-        if (!exists) {
-          entryData.todo_date = today;
-          entryData.is_favourite = false;
-          entries.unshift(entryData);
-          if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-            fsWrite(settings, entryData).catch(function() {});
-          }
-        }
+        if (todos.some(function(t) { return t.question_name === entryData.question_name; })) return; // already in queue
+        var newTodo = {
+          question_name: entryData.question_name,
+          subject: entryData.subject || 'other',
+          source_url: entryData.source_url || '',
+          page_num: entryData.page_num || 1,
+          added_at: today
+        };
+        todos.unshift(newTodo);
+        if (useFirebase) fsWriteTodo(settings, newTodo).catch(function() {});
       });
 
-      await saveCache(entries);
-      sendResponse({ ok: true });
+      await saveTodos(todos);
+      sendResponse({ ok: true, count: todos.length });
     })();
     return true;
   }
@@ -197,9 +217,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         entry.is_favourite = false;
         var ex = entries.find(function (e) { return e.question_name === name; });
         if (ex) {
-
           if (ex.is_favourite) entry.is_favourite = ex.is_favourite; // preserve fav state
-          if (ex.todo_date) entry.todo_date = ex.todo_date; // preserve to-do state
         }
         delete entry.repeated_question; // V2 PURGE: Remove legacy field
         entries = entries.filter(function (e) { return e.question_name !== name; });
@@ -235,7 +253,6 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         var entry = request.entryData;
         entry.is_favourite = true;
         if (ex) {
-          if (ex.todo_date) entry.todo_date = ex.todo_date;
           if (ex.logged_at) entry.logged_at = ex.logged_at;
           entries = entries.filter(function (e) { return e.question_name !== name; });
         }
@@ -265,7 +282,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     
     for (var i = 0; i < entries.length; i++) {
        var e = entries[i];
-       if (e.logged_at || e.is_favourite || e.todo_date || inDupGroups.has(e.question_name)) {
+       if (e.logged_at || e.is_favourite || inDupGroups.has(e.question_name)) {
          newEntries.push(e);
        } else {
          orphansFound = true;
@@ -396,14 +413,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           if (!isPrimary) {
             ex.logged_at = null;
             ex.is_favourite = false;
-            ex.todo_date = null;
           }
         } else {
           var u = name.toUpperCase();
           var subj = u.includes('CHEMI') ? 'chemistry' : u.includes('PHYSI') || u.includes('PHYS') ? 'physics' : u.includes('MATH') ? 'mathematics' : u.includes('BIOL') || u.includes('BIO') ? 'biology' : 'other';
           entries.unshift({ 
             question_name: name, subject: subj, question_imgs: [], answer_imgs: [], old_topics: '', 
-            is_favourite: false, logged_at: null, todo_date: null, source_url: qUrl || ''
+            is_favourite: false, logged_at: null, source_url: qUrl || ''
           });
         }
       });

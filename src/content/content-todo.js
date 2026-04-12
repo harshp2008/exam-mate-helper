@@ -117,7 +117,6 @@ function injectToolbarButtons(list) {
                   old_topics: parsed ? (parsed.topics || '') : '',
                   is_favourite: false,
                   logged_at: null,
-                  todo_date: today,
                   source_url: window.location.href,
                   page_num: (typeof getCurrentPageNumber === 'function' ? getCurrentPageNumber() : 1)
                 });
@@ -179,17 +178,14 @@ function toggleSelectMode() {
       });
     }
     
-    chrome.storage.local.get(['ib_question_cache'], function(res) {
-      var entries = res.ib_question_cache || [];
-      var today = new Date().toISOString().split('T')[0];
+    chrome.storage.local.get(['ib_todos_cache'], function(res) {
+      var todos = res.ib_todos_cache || [];
       ibInitialTodoSet = new Set();
       ibCurrentTodoSet = new Set();
       
-      entries.forEach(function(e) {
-        if (e.todo_date === today) {
-          ibInitialTodoSet.add(e.question_name);
-          ibCurrentTodoSet.add(e.question_name);
-        }
+      todos.forEach(function(t) {
+        ibInitialTodoSet.add(t.question_name);
+        ibCurrentTodoSet.add(t.question_name);
       });
       
       list.querySelectorAll('.ib-todo-checkbox').forEach(function(cb) {
@@ -216,6 +212,21 @@ function toggleSelectMode() {
     
     var count = ibCurrentTodoSet.size;
     showTodoToast(count);
+
+    // Re-sync sidebar markers so ib-todo CSS classes (blue/green/yellow edges) are
+    // applied immediately after the user saves their todo selection.
+    chrome.runtime.sendMessage({ action: 'requestSyncState' }, function(response) {
+      if (!response) return;
+      var qList = document.getElementById('questions-list1');
+      if (!qList) return;
+      var todoNames = new Set(response.todoNames || []);
+      qList.querySelectorAll('li[id^="qid-"]').forEach(function(li) {
+        var ns = li.querySelector('.ib-qname-text') || li.querySelector('span');
+        var name = ns ? (ns.getAttribute('data-realname') || ns.textContent.trim()) : '';
+        if (name) li.classList.toggle('ib-todo', todoNames.has(name));
+      });
+      if (typeof checkEmptyFocusState === 'function') checkEmptyFocusState();
+    });
   }
 }
 

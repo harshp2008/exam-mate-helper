@@ -604,6 +604,7 @@ function setupDupButtonObserver() {
 // In-memory state for the current sidebar session
 var _iboGroup = { id: null, questions: [], primary: '', status: 'user' };
 var _iboAllEntries = [];  // filled once from background cache
+var _iboAllTodos = [];    // filled from background
 var _iboAllGroups  = [];  // filled once from background
 
 function ensureDupSidebar() {
@@ -627,7 +628,9 @@ function openDupSidebar(currentQName) {
   chrome.runtime.sendMessage({ action: 'getDupData' }, function(res) {
     var groups = (res && res.groups) || [];
     var entries = (res && res.entries) || [];
+    var todos = (res && res.todos) || [];
     _iboAllEntries = entries;
+    _iboAllTodos = todos;
     _iboAllGroups  = groups;
 
     var existingGroup = groups.find(function(g) {
@@ -1078,7 +1081,8 @@ function iboSave() {
   var violations = g.questions.filter(function(name) {
     if (name === g.primary) return false;
     var ex = _iboAllEntries.find(function(e) { return e.question_name === name; });
-    return ex && (ex.logged_at || ex.is_favourite || ex.todo_date);
+    var hasTodo = _iboAllTodos.some(function(t) { return t.question_name === name; });
+    return (ex && (ex.logged_at || ex.is_favourite)) || hasTodo;
   });
 
   if (violations.length > 0 && !window._iboResetConfirmed) {

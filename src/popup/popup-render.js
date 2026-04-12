@@ -143,12 +143,11 @@ function showQpMsg(type, text) {
 // ── Today panel ───────────────────────────────────────────────────────────────
 
 function renderTodayPanel() {
-  var today = new Date().toISOString().split('T')[0];
-  var todayItems = window.IB.allEntries.filter(function(e) { 
-    return e.todo_date === today; 
-  });
-  var doneItems   = todayItems.filter(function(e) { return !!e.logged_at; });
-  var undoneItems = todayItems.filter(function(e) { return !e.logged_at; });
+  var todayItems = window.IB.allTodos || [];
+  var loggedNames = new Set(window.IB.allEntries.filter(function(e) { return !!e.logged_at; }).map(function(e) { return e.question_name; }));
+  
+  var doneItems   = todayItems.filter(function(t) { return loggedNames.has(t.question_name); });
+  var undoneItems = todayItems.filter(function(t) { return !loggedNames.has(t.question_name); });
   var doneCount = doneItems.length;
 
   var panel = document.getElementById('panel-today');
@@ -179,7 +178,7 @@ function renderTodayPanel() {
     '</div>' +
     '<div id="today-list">' +
     todayItems.map(function(e) {
-      var isDone = !!e.logged_at; 
+      var isDone = loggedNames.has(e.question_name); 
       var subjectNames = e.subject || 'other';
       var topics = e.old_topics || '';
       return '<div class="today-item' + (isDone ? ' is-done' : '') + '">' +
@@ -199,12 +198,12 @@ function renderTodayPanel() {
   panel.querySelectorAll('.today-remove-btn').forEach(function(btn) {
     btn.addEventListener('click', async function() {
       var name = this.getAttribute('data-name');
-      var entry = window.IB.allEntries.find(function(e) { return e.question_name === name; });
-      if (entry) {
+      var tIdx = window.IB.allTodos.findIndex(function(t) { return t.question_name === name; });
+      if (tIdx !== -1) {
         btn.textContent = '...'; btn.disabled = true;
-        entry.todo_date = null;
-        await window.IB.saveCache(window.IB.allEntries);
-        if (useFirebase()) await window.IB.fsWrite(entry);
+        window.IB.allTodos.splice(tIdx, 1);
+        await window.IB.saveTodos(window.IB.allTodos);
+        if (useFirebase()) await window.IB.fsDeleteTodo(name);
         await markDoneOnPage();
         renderTodayPanel();
       }
@@ -227,11 +226,12 @@ function renderTodayPanel() {
     if (doneItems.length === 0) { return; }
     if (!confirm('Remove ' + doneItems.length + ' completed question(s) from your queue?')) return;
     var btn = this; btn.textContent = '...'; btn.disabled = true;
-    doneItems.forEach(function(e) { e.todo_date = null; });
-    await window.IB.saveCache(window.IB.allEntries);
+    var doneNamesToRemove = new Set(doneItems.map(function(t) { return t.question_name; }));
+    window.IB.allTodos = window.IB.allTodos.filter(function(t) { return !doneNamesToRemove.has(t.question_name); });
+    await window.IB.saveTodos(window.IB.allTodos);
     if (useFirebase()) {
       for (var i = 0; i < doneItems.length; i++) {
-        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
+        try { await window.IB.fsDeleteTodo(doneItems[i].question_name); } catch(_) {}
       }
     }
     await markDoneOnPage();
@@ -244,16 +244,16 @@ function renderTodayPanel() {
     var msg = 'This will:\n\u2022 Remove ' + doneItems.length + ' completed question(s) from your queue\n\u2022 PERMANENTLY DELETE ' + undoneItems.length + ' unfinished question(s) from the database\n\nAre you sure?';
     if (!confirm(msg)) return;
     var btn = this; btn.textContent = '...'; btn.disabled = true;
-    doneItems.forEach(function(e) { e.todo_date = null; });
-    var undoneNames = undoneItems.map(function(e) { return e.question_name; });
-    window.IB.allEntries = window.IB.allEntries.filter(function(e) { return !undoneNames.includes(e.question_name); });
-    await window.IB.saveCache(window.IB.allEntries);
+    
+    window.IB.allTodos = [];
+    await window.IB.saveTodos(window.IB.allTodos);
+    
     if (useFirebase()) {
       for (var i = 0; i < doneItems.length; i++) {
-        try { await window.IB.fsWrite(doneItems[i]); } catch(_) {}
+        try { await window.IB.fsDeleteTodo(doneItems[i].question_name); } catch(_) {}
       }
       for (var j = 0; j < undoneItems.length; j++) {
-        try { await window.IB.fsDelete(undoneItems[j].subject || 'other', undoneItems[j].question_name); } catch(_) {}
+        try { await window.IB.fsDeleteTodo(undoneItems[j].question_name); } catch(_) {}
       }
     }
     await markDoneOnPage();
@@ -360,7 +360,7 @@ function renderDupsPanel() {
   if (countEl) countEl.textContent = groups.length + ' group' + (groups.length !== 1 ? 's' : '');
 
   if (groups.length === 0) {
-    listEl.innerHTML = '<div class="empty-dups">\uD83D\uDD17 No duplicate groups yet.<br>Click "+ New Group" to mark questions as duplicates.</div>';
+    listEl.innerHTML = '<div class="empty-dups">\uD83D\uDD17 No duplicate groups yet.<br>Use the <strong>\uD83D\uDD17 Dup</strong> button in the ExamMate sidebar<br>to mark questions as duplicates.</div>';
     return;
   }
 
@@ -482,10 +482,10 @@ function renderEntryList() {
   }
 
   var filter = (document.getElementById('db-filter').value || '').toLowerCase();
-  var today = new Date().toISOString().split('T')[0];
+  var todoNamesSet = new Set(window.IB.allTodos.map(function(t) { return t.question_name; }));
 
   // Disable/enable toggles based on presence of incomplete items globally
-  var hasIncompleteTodos = window.IB.allEntries.some(function(e) { return !e.logged_at && e.todo_date === today && !isNonPrimaryDup(e); });
+  var hasIncompleteTodos = window.IB.allEntries.some(function(e) { return !e.logged_at && todoNamesSet.has(e.question_name) && !isNonPrimaryDup(e); });
   var hasIncompleteDups = window.IB.allEntries.some(function(e) { 
     return !e.logged_at && !isNonPrimaryDup(e) && (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
   });
@@ -523,7 +523,7 @@ function renderEntryList() {
     
     var isDone = !!e.logged_at;
     var isFav = !!e.is_favourite;
-    var isTodo = e.todo_date === today;
+    var isTodo = todoNamesSet.has(e.question_name);
     var isPrimaryDup = (window.IB.duplicatesDB || []).some(function(g) { return g.primary === e.question_name && g.status !== 'ai-rejected'; });
 
     if (!isDone && !isFav) {
@@ -633,7 +633,7 @@ function renderEntryList() {
       lastCode = currentCode;
 
       var favIcon = e.is_favourite ? '<span style="color:#FF8F00;margin-left:4px;font-size:10px;">♥</span>' : '';
-      var isTodo = e.todo_date === today;
+      var isTodo = todoNamesSet.has(e.question_name);
       var todoBadge = '';
       if (isTodo) {
          todoBadge = e.logged_at 

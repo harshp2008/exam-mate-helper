@@ -164,7 +164,6 @@ function injectCheckboxIntoLi(li) {
             old_topics: parsed ? (parsed.topics || '') : '',
             is_favourite: false,
             logged_at: null,
-            todo_date: new Date().toISOString().split('T')[0],
             source_url: window.location.href,
             page_num: (typeof getCurrentPageNumber === 'function' ? getCurrentPageNumber() : 1)
           };
