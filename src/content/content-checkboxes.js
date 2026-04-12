@@ -14,45 +14,12 @@ function injectDoneCheckboxes() {
     injectCheckboxIntoLi(li);
   });
 
-  // 2. Fetch current state from background to ensure UI is accurate
-  //    (especially after a Livewire refresh of the list)
+  // 2. Apply fresh cloud state to the new checkboxes
   if (!ibStateSyncInProgress) {
     ibStateSyncInProgress = true;
     chrome.runtime.sendMessage({ action: 'requestSyncState' }, function(response) {
       ibStateSyncInProgress = false;
-      if (!response) return;
-      var doneNames = new Set(response.questionNames || []);
-      var favNames = new Set(response.favouriteNames || []);
-      
-      var currentList = document.getElementById('questions-list1');
-      if (currentList) {
-        var todoNames = new Set(response.todoNames || []);
-        currentList.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
-          var nameSpan = li.querySelector('span');
-          var name = nameSpan ? nameSpan.textContent.trim() : null;
-          if (name && doneNames.has(name)) li.classList.add('done');
-          else li.classList.remove('done');
-          if (name) li.classList.toggle('ib-todo', todoNames.has(name));
-        });
-        updateButtonStates(doneNames, favNames);
-        if (response.dupInfo) markDupItems(currentList, response.dupInfo);
-
-        // Disable focus mode automatically if globally there are NO to-dos for today
-        if (todoNames.size === 0) {
-          chrome.storage.local.set({ ib_focus_mode: false });
-          document.body.classList.remove('ib-focus-mode');
-          var fb = document.getElementById('ib-todo-filter-nav-item');
-          if (fb) {
-            var icon = fb.querySelector('i');
-            var textSpan = fb.querySelector('span');
-            if (icon) icon.className = 'fi fi-br-eye d-block text-center';
-            if (textSpan) textSpan.textContent = ' Focus ';
-          }
-        }
-        
-        if (typeof checkEmptyFocusState === 'function') checkEmptyFocusState();
-        // Removed: autoFindDuplicates call moved to content-init.js (one-time trigger)
-      }
+      if (response) markDone(response);
     });
   }
 
@@ -357,6 +324,78 @@ function markDupItems(list, dupInfo) {
         nameNode.removeAttribute('data-realname');
       }
       li._ibDupTooltipAttached = false;
+    }
+  });
+}
+/**
+ * Applies synchronized cloud state (Done, Favourites, Duplicates) to the UI.
+ * This function is the primary way the extension syncs your progress to the page.
+ */
+function markDone(response) {
+  if (!response) return;
+  // V4 Defensive: Ensure we always work with Sets even if background sends arrays
+  var doneNames = (response.questionNames instanceof Set) ? response.questionNames : new Set(response.questionNames || []);
+  var favNames = (response.favouriteNames instanceof Set) ? response.favouriteNames : new Set(response.favouriteNames || []);
+  var todoNames = (response.todoNames instanceof Set) ? response.todoNames : new Set(response.todoNames || []);
+
+  var currentList = document.getElementById('questions-list1');
+  if (currentList) {
+    currentList.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
+      var textEl = li.querySelector('.ib-qname-text') || li.querySelector('span');
+      var name = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : null;
+      
+      // Update checkbox styles
+      if (name && doneNames.has(name)) li.classList.add('done');
+      else li.classList.remove('done');
+      
+      // Update To-Do state
+      if (name) li.classList.toggle('ib-todo', todoNames.has(name));
+    });
+
+    if (response.dupInfo) markDupItems(currentList, response.dupInfo);
+  }
+
+  updateButtonStates(doneNames, favNames);
+
+  // Sync Focus Mode UI
+  if (todoNames.size === 0 && document.body.classList.contains('ib-focus-mode')) {
+    chrome.storage.local.set({ ib_focus_mode: false });
+    document.body.classList.remove('ib-focus-mode');
+    var fb = document.getElementById('ib-todo-filter-nav-item');
+    if (fb) {
+      var icon = fb.querySelector('i'), txt = fb.querySelector('span');
+      if (icon) icon.className = 'fi fi-br-eye d-block text-center';
+      if (txt) txt.textContent = ' Focus ';
+    }
+  }
+}
+
+function updateButtonStates(doneSet, favSet) {
+  // V4 Defensive: Ensure we have sets for .has() check
+  var dSet = (doneSet instanceof Set) ? doneSet : new Set(doneSet || []);
+  var fSet = (favSet instanceof Set) ? favSet : new Set(favSet || []);
+
+  document.querySelectorAll('.ib-done-btn').forEach(function (btn) {
+    var q = btn.getAttribute('data-qname');
+    if (q && dSet.has(q)) {
+      btn.classList.add('is-done');
+      btn.title = 'Mark as not done';
+    } else {
+      btn.classList.remove('is-done');
+      btn.title = 'Mark as done';
+    }
+  });
+
+  document.querySelectorAll('.ib-fav-btn').forEach(function (btn) {
+    var q = btn.getAttribute('data-qname');
+    if (q && fSet.has(q)) {
+      btn.classList.add('is-fav');
+      btn.innerHTML = '&#9829;'; // ♥
+      btn.title = 'Remove from favourites';
+    } else {
+      btn.classList.remove('is-fav');
+      btn.innerHTML = '&#9825;'; // ♡
+      btn.title = 'Add to favourites';
     }
   });
 }

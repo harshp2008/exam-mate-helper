@@ -261,12 +261,18 @@ window.IB = window.IB || {};
 window.IB.showToast = showToast;
 
 function autoFindDuplicates(isManual) {
-  if (_autoDupRunning && !isManual) return;
+  // Reset stuck lock on any explicit or page-change call
+  if (isManual) {
+    _autoDupRunning = false; 
+    if (typeof _ibLastAutoUrl !== 'undefined') _ibLastAutoUrl = ''; // Reset the guard for manual triggers
+  }
+  if (_autoDupRunning) return;
+
   _autoDupRunning = true;
   window.IB.autoFindDuplicates = autoFindDuplicates;
   
   // V2 FAIL-SAFE: If scan hangs, force reset
-  var safetyTimer = setTimeout(function() { _autoDupRunning = false; }, 15000);
+  var safetyTimer = setTimeout(function() { _autoDupRunning = false; }, 20000);
   
   startScanInternal(isManual);
 }
@@ -274,6 +280,7 @@ function autoFindDuplicates(isManual) {
 // V2 REFIX: Unified rescan chain for manual overrides
 window.IB.rescanWithReset = function() {
   _autoDupRunning = false; // Force unlock
+  if (typeof _ibLastAutoUrl !== 'undefined') _ibLastAutoUrl = ''; // Reset the guard
   if (typeof showToast === 'function') showToast('🔍 Preparing rescan (clearing previous rejections)...', 'loading');
 
   var list = document.getElementById('questions-list1');
@@ -302,6 +309,7 @@ function startScanInternal(isManual) {
       }
       var settings = res.ib_settings || {};
       var dupPrefs = settings.dupPrefs || {};
+      if (!settings.dupPrefs) settings.dupPrefs = {}; // Safety guard
 
       chrome.runtime.sendMessage({ action: 'getDupData' }, async function(res2) {
         if (!res2) { _autoDupRunning = false; return; }
@@ -351,6 +359,9 @@ function startScanInternal(isManual) {
 
         // Populate pageQueue
         Object.keys(pageImgMap).forEach(function(pName) {
+          // SKIP if already in a group
+          if (alreadyGrouped.has(pName)) return;
+
           var meta = (typeof parseIBName === 'function') ? parseIBName(pName) : null;
           if (meta) {
             pageQueue.push({ entry: { question_name: pName, question_imgs: pageImgMap[pName] }, meta: meta });
@@ -364,7 +375,8 @@ function startScanInternal(isManual) {
 
         // Populate dbQueue (Pruned by year)
         entries.forEach(function(e) {
-          if (pageImgMap[e.question_name]) return; // Skip if already in pageQueue
+          // SKIP if already in a group or already in pageQueue
+          if (alreadyGrouped.has(e.question_name) || pageImgMap[e.question_name]) return;
 
           var meta = (typeof parseIBName === 'function') ? parseIBName(e.question_name) : null;
           if (meta && meta.isDetailed) {
@@ -405,7 +417,7 @@ function startScanInternal(isManual) {
 
           // Identify Primary (Priority Level HL > Preference Level > Newer TZ)
           var subjKey = (itemA.entry.subject || 'other').toLowerCase();
-          var prefLevel = (res.ib_settings.dupPrefs?.[subjKey] || 'HL').toUpperCase();
+          var prefLevel = (settings.dupPrefs[subjKey] || 'HL').toUpperCase();
           var primary = e1.question_name, duplicate = e2.question_name;
           
           if ((p2.level || '').toUpperCase() === prefLevel && (p1.level || '').toUpperCase() !== prefLevel) {
@@ -531,7 +543,19 @@ function startScanInternal(isManual) {
 // ── Duplicate button (question panel navbar) ──────────────────────────────────
 
 function injectDupButton() {
-  var navUl = document.querySelector('#question > div > div.row > div > ul');
+  // V3 RESILIENT DISCOVERY: Find the navbar by looking for standard buttons (Question/Answer)
+  var allUls = document.querySelectorAll('ul.nav, ul.navbar-nav, .nav');
+  var navUl = null;
+  for (var i = 0; i < allUls.length; i++) {
+    var text = allUls[i].textContent.toLowerCase();
+    if (text.includes('question') && text.includes('answer')) {
+      navUl = allUls[i];
+      break;
+    }
+  }
+  
+  // Fallback: search for #question navbar
+  if (!navUl) navUl = document.querySelector('#question ul.nav, #app ul.nav, .col-xl-9 ul.nav');
   if (!navUl) return;
   
   if (!document.getElementById('ib-dup-nav-item')) {
@@ -609,16 +633,39 @@ var _iboAllGroups  = [];  // filled once from background
 
 function ensureDupSidebar() {
   if (document.getElementById('ib-dup-sidebar')) return;
-  // Wait for #app > div.row
+  // V5 TARGETED MOUNTING: Anchor strictly to the main question/list container
   function tryInsert() {
-    var row = document.querySelector('#app > div.row');
-    if (!row) { setTimeout(tryInsert, 400); return; }
+    var row = null;
+    
+    // 1. Try finding the row that actually contains the question or the list
+    var qEl = document.getElementById('question') || document.querySelector('.question-list');
+    if (qEl) {
+        row = qEl.closest('.row');
+    }
+    
+    // 2. Fallback: Specific main app rows, avoiding search filters
+    if (!row) {
+        row = document.querySelector('#app > .row, #app > div > .row');
+    }
+
+    if (!row) { 
+      // Fallback: If no row found, append to body with fixed positioning safety
+      if (document.body) {
+         injectSidebarToContainer(document.body);
+      }
+      return; 
+    }
+    injectSidebarToContainer(row);
+  }
+  
+  function injectSidebarToContainer(container) {
     if (document.getElementById('ib-dup-sidebar')) return;
     var sidebar = document.createElement('div');
     sidebar.id = 'ib-dup-sidebar';
     sidebar.innerHTML = '<div class="ibo-inner" id="ibo-inner"></div>';
-    row.appendChild(sidebar);
+    container.appendChild(sidebar);
   }
+
   tryInsert();
 }
 

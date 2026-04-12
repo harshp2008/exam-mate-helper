@@ -42,10 +42,27 @@ function fromFS(doc) {
   return obj;
 }
 
-async function fsWrite(settings, entry) {
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsWrite(settings, entry, skipSyncTouch) {
   await fetch(subjectDocUrl(settings, entry.subject), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { subject: { stringValue: subjectKey(entry.subject) } } }) });
   var r = await fetch(qDocUrl(settings, entry.subject, entry.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(entry)) });
-  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Write failed'); }
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok) {
+    var e = await r.json();
+    throw new Error(e.error && e.error.message ? e.error.message : 'Write failed');
+  }
+}
+
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsDelete(settings, subject, name, skipSyncTouch) {
+  var url = qDocUrl(settings, subject, name);
+  var r = await fetch(url, { method: 'DELETE' });
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok && r.status !== 404) {
+    throw new Error('Delete failed (' + r.status + ')');
+  }
 }
 
 function dupGroupUrl(settings, groupId) {
@@ -62,9 +79,47 @@ function todoListUrl(settings, pt) {
   if (pt) url += '&pageToken=' + encodeURIComponent(pt);
   return url;
 }
-async function fsWriteDupGroup(settings, group) {
+
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsWriteDupGroup(settings, group, skipSyncTouch) {
   var r = await fetch(dupGroupUrl(settings, group.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(group)) });
-  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed'); }
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok) {
+    var e = await r.json();
+    throw new Error(e.error && e.error.message ? e.error.message : 'Dup write failed');
+  }
+}
+
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsDeleteDupGroup(settings, groupId, skipSyncTouch) {
+  var r = await fetch(dupGroupUrl(settings, groupId), { method: 'DELETE' });
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok && r.status !== 404) {
+    throw new Error('Delete failed (' + r.status + ')');
+  }
+}
+
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsWriteTodo(settings, todo, skipSyncTouch) {
+  var r = await fetch(todoDocUrl(settings, todo.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(todo)) });
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok) {
+    var e = await r.json();
+    throw new Error(e.error && e.error.message ? e.error.message : 'Todo write failed');
+  }
+}
+
+/** @param {boolean} skipSyncTouch - If true, do NOT update the global gatekeeper timestamp. */
+async function fsDeleteTodo(settings, qname, skipSyncTouch) {
+  var r = await fetch(todoDocUrl(settings, qname), { method: 'DELETE' });
+  if (r.ok && !skipSyncTouch) {
+    await bumpGlobalSyncTime(settings);
+  } else if (!r.ok && r.status !== 404) {
+    throw new Error('Todo delete failed (' + r.status + ')');
+  }
 }
 
 async function fsReadAllDupGroups(settings) {
@@ -79,24 +134,6 @@ async function fsReadAllDupGroups(settings) {
   return results;
 }
 
-async function fsDeleteDupGroup(settings, groupId) {
-  var r = await fetch(dupGroupUrl(settings, groupId), { method: 'DELETE' });
-  if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
-}
-
-async function fsDelete(settings, subject, qname) {
-  var r = await fetch(qDocUrl(settings, subject, qname), { method: 'DELETE' });
-  if (!r.ok && r.status !== 404) throw new Error('Delete failed (' + r.status + ')');
-}
-
-async function fsWriteTodo(settings, todo) {
-  var r = await fetch(todoDocUrl(settings, todo.question_name), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toFS(todo)) });
-  if (!r.ok) { var e = await r.json(); throw new Error(e.error && e.error.message ? e.error.message : 'Todo write failed'); }
-}
-async function fsDeleteTodo(settings, qname) {
-  var r = await fetch(todoDocUrl(settings, qname), { method: 'DELETE' });
-  if (!r.ok && r.status !== 404) throw new Error('Todo delete failed (' + r.status + ')');
-}
 async function fsReadAllTodos(settings) {
   var results = [], pt = null;
   do {
@@ -124,7 +161,128 @@ async function fsReadAll(settings) {
   return results;
 }
 
-// ── Storage helpers ───────────────────────────────────────────────────────────
+async function fsRunQuery(settings, collectionId, parentPath, sinceTs) {
+  var base = fsBase(settings);
+  var parent = parentPath ? (base + '/' + parentPath) : base;
+  var url = parent + ':runQuery?key=' + settings.firebaseApiKey;
+  var query = {
+    structuredQuery: {
+      from: [{ collectionId: collectionId }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath: 'updated_at' },
+          op: 'GREATER_THAN',
+          value: { integerValue: String(sinceTs) }
+        }
+      }
+    }
+  };
+  var r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(query)
+  });
+  if (!r.ok) {
+    if (r.status === 404) return [];
+    var e = await r.json();
+    throw new Error('runQuery failed: ' + (e.error && e.error.message ? e.error.message : r.status));
+  }
+  var results = await r.json();
+  return results
+    .filter(function(row) { return row.document && row.document.fields; })
+    .map(function(row) { return fromFS(row.document); });
+}
+
+async function fsReadDeltaEntries(settings, sinceTs) {
+  var promises = KNOWN_SUBJECTS.map(function(subj) {
+    return fsRunQuery(settings, 'PYQS', 'subjects/' + subjectKey(subj), sinceTs)
+      .catch(function() { return []; });
+  });
+  var results = await Promise.all(promises);
+  return [].concat.apply([], results);
+}
+
+async function fsReadDeltaTodos(settings, sinceTs) {
+  return fsRunQuery(settings, 'todos', null, sinceTs).catch(function() { return []; });
+}
+
+async function fsReadDeltaDups(settings, sinceTs) {
+  return fsRunQuery(settings, 'duplicates', null, sinceTs).catch(function() { return []; });
+}
+
+var LOCAL_SYNC_TIME_KEY = 'ib_firebase_sync_time';
+var PENDING_CHANGES_KEY = 'ib_pending_changes';
+var MAX_PENDING_CHANGES = 500;
+
+function metaSyncUrl(settings) {
+  return fsBase(settings) + '/meta/sync_state?key=' + settings.firebaseApiKey;
+}
+
+async function getLocalSyncTime() {
+  try {
+    var s = await chrome.storage.local.get([LOCAL_SYNC_TIME_KEY]);
+    return s[LOCAL_SYNC_TIME_KEY] || 0;
+  } catch (e) { return 0; }
+}
+
+async function setLocalSyncTime(ts) {
+  try { await chrome.storage.local.set({ [LOCAL_SYNC_TIME_KEY]: ts }); } catch (e) {}
+}
+
+async function getRemoteSyncTime(settings) {
+  try {
+    var r = await fetch(metaSyncUrl(settings));
+    if (!r.ok) return 0;
+    var d = await r.json();
+    return d.fields && d.fields.last_sync_time ? Number(d.fields.last_sync_time.integerValue) : 0;
+  } catch (e) { return 0; }
+}
+
+async function setRemoteSyncTime(settings, ts) {
+  await fetch(metaSyncUrl(settings), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { last_sync_time: { integerValue: String(ts) } } })
+  });
+}
+
+async function bumpGlobalSyncTime(settings) {
+  if (!settings || settings.mode !== 'firebase' || !settings.firebaseApiKey || !settings.firebaseProjectId) return;
+  var T_new = Date.now();
+  try {
+    await setRemoteSyncTime(settings, T_new);
+    await setLocalSyncTime(T_new);
+    console.log('[IB Sync] Gatekeeper Cloud Update Success: Sync Time advanced to ' + T_new);
+  } catch (e) {
+    console.error('[IB Sync] Failed to bump global sync time:', e.message);
+  }
+}
+
+async function getPendingChanges() {
+  try {
+    var s = await chrome.storage.local.get([PENDING_CHANGES_KEY]);
+    return s[PENDING_CHANGES_KEY] || [];
+  } catch (e) { return []; }
+}
+
+async function clearPendingChanges() {
+  try { await chrome.storage.local.set({ [PENDING_CHANGES_KEY]: [] }); } catch (e) {}
+}
+
+async function recordChange(collection, op, key, data) {
+  try {
+    var changes = await getPendingChanges();
+    changes = changes.filter(function(c) { return !(c.collection === collection && c.key === key); });
+    changes.push({
+      id: Date.now() + '_' + Math.random().toString(36).slice(2),
+      collection: collection, op: op, key: key, data: data || null, ts: Date.now()
+    });
+    if (changes.length > MAX_PENDING_CHANGES) {
+      changes = changes.slice(changes.length - MAX_PENDING_CHANGES);
+    }
+    await chrome.storage.local.set({ [PENDING_CHANGES_KEY]: changes });
+  } catch (e) {}
+}
 
 async function loadCache() {
   try { 
@@ -137,7 +295,7 @@ async function loadCache() {
             if (!todos.some(function(t) { return t.question_name === entries[i].question_name; })) {
                 todos.push({
                     question_name: entries[i].question_name,
-                    subject: entries[i].subject || window.IB.KNOWN_SUBJECTS[window.IB.KNOWN_SUBJECTS.length - 1],
+                    subject: entries[i].subject || KNOWN_SUBJECTS[KNOWN_SUBJECTS.length - 1],
                     source_url: entries[i].source_url || '',
                     page_num: entries[i].page_num || 1,
                     todo_date: entries[i].todo_date,
@@ -154,50 +312,65 @@ async function loadCache() {
     return entries; 
   } catch (e) { return []; }
 }
-async function saveCache(entries) {
-  try { await chrome.storage.local.set({ [CACHE_KEY]: entries }); } catch (e) { }
-}
-async function loadTodos() {
-  try { var s = await chrome.storage.local.get(['ib_todos_cache']); return s['ib_todos_cache'] || []; } catch (e) { return []; }
-}
-async function saveTodos(todos) {
-  try { await chrome.storage.local.set({ ib_todos_cache: todos }); } catch (e) { }
-}
-async function loadDuplicates() {
-  try { var s = await chrome.storage.local.get(['ib_duplicates_cache']); return s['ib_duplicates_cache'] || []; } catch (e) { return []; }
-}
-async function saveDuplicates(groups) {
-  try { await chrome.storage.local.set({ ib_duplicates_cache: groups }); } catch (e) { }
-}
-async function loadRejectedGroups() {
-  try { var s = await chrome.storage.local.get(['ib_rejected_duplicates']); return s['ib_rejected_duplicates'] || []; } catch (e) { return []; }
-}
-async function saveRejectedGroups(groups) {
-  try { await chrome.storage.local.set({ ib_rejected_duplicates: groups }); } catch (e) { }
-}
-async function getSettings() {
-  try { var s = await chrome.storage.local.get([SETTINGS_KEY]); return s[SETTINGS_KEY] || {}; } catch (e) { return {}; }
-}
+async function saveCache(entries) { try { await chrome.storage.local.set({ [CACHE_KEY]: entries }); } catch (e) { } }
+async function loadTodos() { try { var s = await chrome.storage.local.get(['ib_todos_cache']); return s['ib_todos_cache'] || []; } catch (e) { return []; } }
+async function saveTodos(todos) { try { await chrome.storage.local.set({ ib_todos_cache: todos }); } catch (e) { } }
+async function loadDuplicates() { try { var s = await chrome.storage.local.get(['ib_duplicates_cache']); return s['ib_duplicates_cache'] || []; } catch (e) { return []; } }
+async function saveDuplicates(groups) { try { await chrome.storage.local.set({ ib_duplicates_cache: groups }); } catch (e) { } }
+async function loadRejectedGroups() { try { var s = await chrome.storage.local.get(['ib_rejected_duplicates']); return s['ib_rejected_duplicates'] || []; } catch (e) { return []; } }
+async function saveRejectedGroups(groups) { try { await chrome.storage.local.set({ ib_rejected_duplicates: groups }); } catch (e) { } }
+async function getSettings() { try { var s = await chrome.storage.local.get([SETTINGS_KEY]); return s[SETTINGS_KEY] || {}; } catch (e) { return {}; } }
 
-// Note: e.todo_date is removed, do not merge it back.
-function mergeEntries(remote, local) {
+function mergeEntries(remote, local, pendingChanges, isFirstSync, isDelta) {
+  pendingChanges = pendingChanges || [];
+  var localChanges = {};
+  pendingChanges.forEach(function(c) { if (c.collection === 'entries') localChanges[c.key] = c; });
   var map = {};
-  remote.forEach(function (e) { map[e.question_name] = e; });
-  local.forEach(function (e) { 
-    if (!map[e.question_name]) {
-      map[e.question_name] = e; 
+  remote.forEach(function(e) { map[e.question_name] = e; });
+  local.forEach(function(e) {
+    var name = e.question_name, change = localChanges[name];
+    if (map[name]) {
+      if (change && change.op !== 'delete' && change.data) map[name] = change.data;
     } else {
-      if (e.is_favourite && !map[e.question_name].is_favourite) map[e.question_name].is_favourite = e.is_favourite;
+      if (isFirstSync || isDelta) map[name] = e;
+      else if (change && (change.op === 'add' || change.op === 'update')) map[name] = change.data || e;
     }
   });
   var arr = Object.values(map);
-  arr.sort(function (a, b) { return (b.logged_at || '').localeCompare(a.logged_at || ''); });
+  arr.sort(function(a, b) { return (b.logged_at || '').localeCompare(a.logged_at || ''); });
   return arr;
 }
 
-function mergeTodos(remote, local) {
+function mergeTodos(remote, local, pendingChanges, isFirstSync, isDelta) {
+  pendingChanges = pendingChanges || [];
+  var localChanges = {};
+  pendingChanges.forEach(function(c) { if (c.collection === 'todos') localChanges[c.key] = c; });
   var map = {};
   remote.forEach(function(e) { map[e.question_name] = e; });
-  local.forEach(function(e) { if (!map[e.question_name]) map[e.question_name] = e; });
+  local.forEach(function(e) {
+    var name = e.question_name, change = localChanges[name];
+    if (map[name]) { if (change && change.op === 'delete') delete map[name]; }
+    else {
+      if (isFirstSync || isDelta) map[name] = e;
+      else if (change && (change.op === 'add' || change.op === 'update')) map[name] = change.data || e;
+    }
+  });
+  return Object.values(map);
+}
+
+function mergeDupGroups(remote, local, pendingChanges, isFirstSync, isDelta) {
+  pendingChanges = pendingChanges || [];
+  var localChanges = {};
+  pendingChanges.forEach(function(c) { if (c.collection === 'dups') localChanges[c.key] = c; });
+  var map = {};
+  remote.forEach(function(g) { map[g.id] = g; });
+  local.forEach(function(g) {
+    var change = localChanges[g.id];
+    if (map[g.id]) { if (change && change.op !== 'delete' && change.data) map[g.id] = change.data; }
+    else {
+      if (isFirstSync || isDelta) map[g.id] = g;
+      else if (change && (change.op === 'add' || change.op === 'update')) map[g.id] = change.data || g;
+    }
+  });
   return Object.values(map);
 }

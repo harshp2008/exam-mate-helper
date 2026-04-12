@@ -77,27 +77,17 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     // Called by background after sync — updates colours + checkboxes + hides overlay
     injectAllCSS();
     injectHighPriorityCSS();
-    injectDoneCheckboxes();
-    var list = document.getElementById('questions-list1');
-    if (list) {
-      var loggedNames = new Set(request.questionNames || []);
-      var todoSet = new Set(request.todoNames || []);
-      list.querySelectorAll('li[id^="qid-"]').forEach(function (li) {
-        var nameSpan = li.querySelector('span');
-        var name = nameSpan ? nameSpan.textContent.trim() : null;
-        if (name && loggedNames.has(name)) li.classList.add('done');
-        else li.classList.remove('done');
-        
-        if (name) li.classList.toggle('ib-todo', todoSet.has(name));
-      });
-      updateButtonStates(request.questionNames || [], request.favouriteNames || []);
-      
-      // Store rejected groups to prevent AI re-detection
-      if (request.rejectedGroups) window.IB.rejectedGroups = request.rejectedGroups;
-      
-      if (request.dupInfo) markDupItems(list, request.dupInfo);
+    
+    // V4: Use centralized Master Injector and markDone
+    if (typeof triggerFullUiInjection === 'function') {
+        triggerFullUiInjection(request);
+    } else {
+        // Fallback if init hasn't run yet
+        if (typeof injectDoneCheckboxes === 'function') injectDoneCheckboxes();
+        if (typeof markDone === 'function') markDone(request);
     }
-    completeLoadingOverlay(); // ← hides overlay once sync is done
+    
+    completeLoadingOverlay();
     sendResponse({ marked: true });
     return true;
   }

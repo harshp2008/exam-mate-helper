@@ -245,20 +245,12 @@ function renderTodayPanel() {
     if (!confirm(msg)) return;
     var btn = this; btn.textContent = '...'; btn.disabled = true;
     
-    window.IB.allTodos = [];
-    await window.IB.saveTodos(window.IB.allTodos);
-    
-    if (useFirebase()) {
-      for (var i = 0; i < doneItems.length; i++) {
-        try { await window.IB.fsDeleteTodo(doneItems[i].question_name); } catch(_) {}
-      }
-      for (var j = 0; j < undoneItems.length; j++) {
-        try { await window.IB.fsDeleteTodo(undoneItems[j].question_name); } catch(_) {}
-      }
-    }
-    await markDoneOnPage();
-    notifyContentScriptTodoReset();
-    renderTodayPanel();
+    chrome.runtime.sendMessage({ action: 'clearAllTodos' }, async function() {
+      window.IB.allTodos = [];
+      await markDoneOnPage();
+      notifyContentScriptTodoReset();
+      renderTodayPanel();
+    });
   });
 }
 

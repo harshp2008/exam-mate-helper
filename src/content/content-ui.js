@@ -5,35 +5,25 @@
 function showLoadingOverlay(msg, sub) {
   removeLoadingOverlay();
   var el = document.createElement('div');
-  el.id = 'ib-loading-overlay';
+  el.id = 'ib-sync-overlay-container';
+  el.className = 'ibo-sync-overlay';
   el.innerHTML =
-    '<div class="ib-lo-title">' + (msg || 'Syncing your progress...') + '</div>' +
-    '<div class="ib-lo-sub">' + (sub || 'Loading done questions from database') + '</div>' +
-    '<div class="ib-lo-bar-wrap"><div class="ib-lo-bar" id="ib-lo-bar"></div></div>';
+    '<div class="ibo-sync-spinner"></div>' +
+    '<div class="ibo-sync-text">' + (msg || 'Synchronizing with Cloud...') + '</div>' +
+    '<div class="ibo-sync-subtext">' + (sub || 'Please wait while we verify your progress') + '</div>';
   document.body.appendChild(el);
-  // Animate bar to ~80% while waiting, 100% on done
-  var pct = 0;
-  var interval = setInterval(function () {
-    pct = Math.min(pct + Math.random() * 18, 80);
-    var bar = document.getElementById('ib-lo-bar');
-    if (bar) bar.style.width = pct + '%';
-    else clearInterval(interval);
-  }, 200);
-  el._interval = interval;
 }
 
 function completeLoadingOverlay() {
-  var el = document.getElementById('ib-loading-overlay');
-  if (!el) return;
-  clearInterval(el._interval);
-  var bar = document.getElementById('ib-lo-bar');
-  if (bar) bar.style.width = '100%';
-  setTimeout(removeLoadingOverlay, 400);
+  removeLoadingOverlay();
 }
 
 function removeLoadingOverlay() {
-  var el = document.getElementById('ib-loading-overlay');
-  if (el) { clearInterval(el._interval); el.remove(); }
+  var el = document.getElementById('ib-sync-overlay-container');
+  if (el) {
+    el.style.opacity = '0';
+    setTimeout(function() { if (el.parentNode) el.remove(); }, 400);
+  }
 }
 
 // ── Toast Notifications ───────────────────────────────────────────────────────

@@ -159,3 +159,61 @@ window.IB.fsReadAll = async function() {
   }
   return results;
 };
+
+// ── Sync-state helpers (popup-side) ──────────────────────────────────────────
+// These are the popup equivalents of the background's getRemoteSyncTime /
+// setRemoteSyncTime helpers in background-api.js.
+
+window.IB.metaSyncUrl = function() {
+  return window.IB.fsBase() + '/meta/sync_state?key=' + window.IB.appSettings.firebaseApiKey;
+};
+
+/** Reads the shared sync timestamp from Firestore /meta/sync_state. Returns 0 if missing. */
+window.IB.getRemoteSyncTime = async function() {
+  try {
+    var r = await fetch(window.IB.metaSyncUrl());
+    if (!r.ok) return 0;
+    var d = await r.json();
+    return d.fields && d.fields.last_sync_time ? Number(d.fields.last_sync_time.integerValue) : 0;
+  } catch (e) { return 0; }
+};
+
+/** Writes a new shared sync timestamp to Firestore /meta/sync_state. */
+window.IB.setRemoteSyncTime = async function(ts) {
+  try {
+    await fetch(window.IB.metaSyncUrl(), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { last_sync_time: { integerValue: String(ts) } } })
+    });
+  } catch (e) {}
+};
+
+/**
+ * Applies a list of pending changes to Firebase from the popup context.
+ * Mirrors applyChangesToFirebase() in background.js.
+ */
+window.IB.applyChangesToFirebase = async function(changes) {
+  for (var i = 0; i < changes.length; i++) {
+    var c = changes[i];
+    try {
+      if (c.collection === 'todos') {
+        if (c.op === 'delete') await window.IB.fsDeleteTodo(c.key);
+        else if (c.data) await window.IB.fsWriteTodo(c.data);
+      } else if (c.collection === 'dups') {
+        if (c.op === 'delete') await window.IB.fsDeleteDupGroup(c.key);
+        else if (c.data) await window.IB.fsWriteDupGroup(c.data);
+      } else { // 'entries'
+        if (c.op === 'delete' && c.data) await window.IB.fsDelete(c.data.subject || 'other', c.key);
+        else if (c.data) await window.IB.fsWrite(c.data);
+      }
+    } catch (_) { /* silent — retried on next sync */ }
+  }
+};
+
+/** Delete a dup group from Firestore by ID. */
+window.IB.fsDeleteDupGroup = async function(groupId) {
+  var r = await fetch(window.IB.dupGroupUrl(groupId), { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('Dup delete failed (' + r.status + ')');
+};
+

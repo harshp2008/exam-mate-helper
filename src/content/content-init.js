@@ -1,5 +1,8 @@
 // content-init.js — Initialization and persistent observer for IB Exam Logger
 
+var _ibLastSyncResponse = null;
+var _ibLastAutoUrl = ''; // V5 Guard: Tracks last processed URL to allow auto-run on navigation (Page 2, etc.)
+
 // Set up a persistent observer on the body to catch when #questions-list1 is replaced/updated
 function setupPersistentObserver() {
   if (window._ibPersistentObserver) return;
@@ -7,7 +10,6 @@ function setupPersistentObserver() {
     var needsInjection = false;
     for (var i = 0; i < mutations.length; i++) {
       var m = mutations[i];
-      // Check if nodes were added
       if (m.addedNodes.length > 0) {
         for (var j = 0; j < m.addedNodes.length; j++) {
           var node = m.addedNodes[j];
@@ -23,13 +25,9 @@ function setupPersistentObserver() {
     }
 
     if (needsInjection) {
-      clearTimeout(ibInjectionTimeout);
-      ibInjectionTimeout = setTimeout(function() {
-        injectDoneCheckboxes();
-        // V2 REFIX: Ensure auto-scan runs on AJAX page changes (next page, random, search)
-        if (typeof autoFindDuplicates === 'function') {
-          autoFindDuplicates();
-        }
+      clearTimeout(window.ibInjectionTimeout);
+      window.ibInjectionTimeout = setTimeout(function() {
+        triggerFullUiInjection(_ibLastSyncResponse);
       }, 250);
     }
   });
@@ -38,84 +36,116 @@ function setupPersistentObserver() {
   window._ibPersistentObserver = observer;
 }
 
+/**
+ * MASTER INJECTOR: Handles Done, Dup, Copy, and Sidebar in one go.
+ */
+function triggerFullUiInjection(syncResponse) {
+    console.log('[IB] Triggering Master Injection Loop...');
+    
+    // 1. Structural Injections
+    if (typeof injectDoneCheckboxes === 'function') injectDoneCheckboxes();
+    
+    if (typeof injectDupButton === 'function') {
+        injectDupButton();
+        // Catch-up pulses for slow navbars
+        setTimeout(injectDupButton, 800);
+        setTimeout(injectDupButton, 2000);
+    }
+    
+    if (typeof ensureDupSidebar === 'function') ensureDupSidebar();
+    if (typeof setupDupButtonObserver === 'function') setupDupButtonObserver();
+
+    // 2. State Application (Hearts, Checks, Labels)
+    if (syncResponse && typeof markDone === 'function') {
+        markDone(syncResponse);
+    }
+
+    // 3. Last-to-load: Auto-Scanner (Run exactly once per load/navigation)
+    if (_ibLastAutoUrl !== window.location.href && typeof autoFindDuplicates === 'function') {
+        _ibLastAutoUrl = window.location.href;
+        // Debounce scanner to ensure DOM is settled
+        clearTimeout(window._ibAutoDupTimer);
+        window._ibAutoDupTimer = setTimeout(autoFindDuplicates, 1500);
+    }
+}
+
 // ── Init: run on page load ────────────────────────────────────────────────────
 
 (function init() {
   injectAllCSS();
-  // Show overlay immediately on page load — background will hide it once markDone arrives
-  showLoadingOverlay('Syncing your progress...', 'Loading done questions from database');
+  
+  // 1. Initial State: Hold user at loading page
+  showLoadingOverlay('Synchronizing with Cloud...', 'Verifying your progress across devices');
 
-  // Wait for question list to appear then setup exactly once
-  function tryInject() {
-    if (document.getElementById('questions-list1')) {
-      injectDoneCheckboxes();
-      setupPersistentObserver();
-      
-      // Trigger auto-duplicate detection exactly once per page load
-      if (typeof autoFindDuplicates === 'function' && !window._ibAutoDupTriggered) {
-        window._ibAutoDupTriggered = true;
-        setTimeout(autoFindDuplicates, 2500);
-      }
-      
-      var focusQ = new URLSearchParams(window.location.search).get('ib_focus');
-      if (focusQ) {
-        setTimeout(function() {
-          var lis = document.querySelectorAll('#questions-list1 li[id^="qid-"]');
-          for (var i = 0; i < lis.length; i++) {
-            var textEl = lis[i].querySelector('.ib-qname-text') || lis[i].querySelector('span');
-            var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
-            
-            if (realName === focusQ || (textEl && textEl.textContent.trim() === focusQ)) {
-              lis[i].click();
-              lis[i].scrollIntoView({behavior: 'smooth', block: 'center'});
-              
-              var sp = new URLSearchParams(window.location.search);
-              if (sp.get('ib_open_dups') === '1' && typeof openDupSidebar === 'function') {
-                setTimeout(function() { openDupSidebar(focusQ); }, 600);
-              }
-
-              // Remove the parameter from URL to avoid re-triggering on subsequent page logic
-              var newUrl = new URL(window.location.href);
-              newUrl.searchParams.delete('ib_focus');
-              newUrl.searchParams.delete('ib_open_dups');
-              window.history.replaceState({}, '', newUrl);
-              break;
-            }
-          }
-        }, 400); // give ExamMate's JS time to bind the click listeners before we click
-      } else {
-        // On a normal hard reload, ExamMate sometimes omits the internal data from the DOM
-        // for the active question. A simulated click forces Livewire to attach it.
-        setTimeout(function() {
-          var activeLi = document.querySelector('#questions-list1 li.active[id^="qid-"]');
-          if (activeLi && !parseOnclickData(activeLi)) {
-            activeLi.click();
-          }
-        }, 600);
-      }
+  // 2. Request blocking sync and fresh state
+  chrome.runtime.sendMessage({ action: 'syncAndGetState' }, function(res) {
+    _ibLastSyncResponse = res;
+    
+    if (chrome.runtime.lastError || !res) {
+      console.warn('[IB] Startup sync failed or timed out. Falling back to local state.');
     } else {
-      setTimeout(tryInject, 300);
+      console.log('[IB] Startup sync complete.');
     }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', tryInject);
-  } else {
+    
+    // 3. Proceed with DOM injection
+    function tryInject() {
+      if (document.getElementById('questions-list1')) {
+        setupPersistentObserver();
+        triggerFullUiInjection(_ibLastSyncResponse);
+
+        // Hide overlay only after structure is built
+        setTimeout(completeLoadingOverlay, 500);
+        
+        handleUrlParameters();
+      } else {
+        setTimeout(tryInject, 300);
+      }
+    }
     tryInject();
-  }
+  });
 
-  // Safety: remove overlay after 6s max even if background doesn't respond
-  setTimeout(removeLoadingOverlay, 6000);
-
-  // Inject duplicate button into question navbar
-  injectDupButton();
-  setupDupButtonObserver();
-
-  // Ensure sidebar container exists in #app > div.row
-  ensureDupSidebar();
+  // Safety: remove overlay after 10s max
+  setTimeout(removeLoadingOverlay, 10000);
 
   // HIGH PRIORITY: Load at the VERY end
   injectHighPriorityCSS();
 })();
+
+function handleUrlParameters() {
+  var focusQ = new URLSearchParams(window.location.search).get('ib_focus');
+  if (focusQ) {
+    setTimeout(function() {
+      var lis = document.querySelectorAll('#questions-list1 li[id^="qid-"]');
+      for (var i = 0; i < lis.length; i++) {
+        var textEl = lis[i].querySelector('.ib-qname-text') || lis[i].querySelector('span');
+        var realName = textEl ? (textEl.getAttribute('data-realname') || textEl.textContent.trim()) : '';
+        
+        if (realName === focusQ || (textEl && textEl.textContent.trim() === focusQ)) {
+          lis[i].click();
+          lis[i].scrollIntoView({behavior: 'smooth', block: 'center'});
+          
+          var sp = new URLSearchParams(window.location.search);
+          if (sp.get('ib_open_dups') === '1' && typeof openDupSidebar === 'function') {
+            setTimeout(function() { openDupSidebar(focusQ); }, 600);
+          }
+
+          var newUrl = new URL(window.location.href);
+          newUrl.searchParams.delete('ib_focus');
+          newUrl.searchParams.delete('ib_open_dups');
+          window.history.replaceState({}, '', newUrl);
+          break;
+        }
+      }
+    }, 400);
+  } else {
+    setTimeout(function() {
+      var activeLi = document.querySelector('#questions-list1 li.active[id^="qid-"]');
+      if (activeLi && !parseOnclickData(activeLi)) {
+        activeLi.click();
+      }
+    }, 600);
+  }
+}
 
 // ── Manual Rescan Coordination ───────────────────────────────────────────────
 

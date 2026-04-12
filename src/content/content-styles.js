@@ -259,7 +259,14 @@ function injectAllCSS() {
     '.ibo-copy-btn { background: none; border: none; color: #185FA5; cursor: pointer; padding: 0; width: 100%; height: 100%; transition: background 0.15s; display: flex; align-items: center; justify-content: center; }',
     '.ibo-copy-btn:hover { background: rgba(24, 95, 165, 0.08); }',
     '.ibo-copy-btn:active { background: rgba(24, 95, 165, 0.15); }',
-    '.ibo-copy-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9cb6d8; letter-spacing: 0.05em; margin-bottom: 2px; }'
+    '.ibo-copy-label { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #9cb6d8; letter-spacing: 0.05em; margin-bottom: 2px; }',
+    
+    // ── Sync Overlay Styles ──
+    '.ibo-sync-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(255,255,255,0.92); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: "Inter", system-ui, sans-serif; transition: opacity 0.4s ease; backdrop-filter: blur(4px); }',
+    '.ibo-sync-spinner { width: 48px; height: 48px; border: 4px solid #e0e8f5; border-top: 4px solid #185FA5; border-radius: 50%; animation: ibo-spin 1s linear infinite; margin-bottom: 20px; }',
+    '.ibo-sync-text { font-size: 18px; font-weight: 600; color: #185FA5; margin-bottom: 8px; }',
+    '.ibo-sync-subtext { font-size: 14px; color: #667e9d; }',
+    '@keyframes ibo-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }'
 
   ].join('\n');
   document.head.appendChild(style);

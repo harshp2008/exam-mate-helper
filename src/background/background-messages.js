@@ -3,6 +3,24 @@
 // ── Message listener: toggleDoneFromPage + toggleFavouriteFromPage ────────────
 
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+ 
+  if (request.action === 'syncAndGetState') {
+    (async function() {
+      try {
+        // 1. Run the full autoSync logic and wait for it to finish.
+        // This ensures the local cache is current BEFORE we try to mark the page.
+        await autoSync(); 
+        // 2. Extract the fresh state for the content script.
+        var data = await getSyncDataForTab();
+        sendResponse(data);
+      } catch (err) {
+        console.error('[IB Sync] syncAndGetState handler failed:', err);
+        // Ensure the content script is NEVER left hanging
+        sendResponse(null);
+      }
+    })();
+    return true;
+  }
 
   if (request.action === 'getTodoPages') {
     (async function() {
@@ -134,6 +152,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'updateTodoQueue') {
     (async function() {
+      // 1. Pull changes first to ensure we have the latest state
+      await autoSync();
+
       var settings = await getSettings();
       var todos = await loadTodos();
       var today = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -147,6 +168,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         todos = todos.filter(function(t) { 
           if (removeSet.has(t.question_name)) {
             if (useFirebase) fsDeleteTodo(settings, t.question_name).catch(function(){});
+            // Record deletion in the pending changes log
+            recordChange('todos', 'delete', t.question_name, null);
             return false;
           }
           return true;
@@ -165,10 +188,12 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
             subject: (entry && entry.subject) ? entry.subject : 'other',
             source_url: (entry && entry.source_url) ? entry.source_url : '',
             page_num: (entry && entry.page_num) ? entry.page_num : 1,
-            added_at: today
+            added_at: today,
+            updated_at: Date.now()
           };
           todos.unshift(newTodo);
           if (useFirebase) fsWriteTodo(settings, newTodo).catch(function() {});
+          recordChange('todos', 'add', name, newTodo);
         });
       }
 
@@ -183,13 +208,22 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           subject: entryData.subject || 'other',
           source_url: entryData.source_url || '',
           page_num: entryData.page_num || 1,
-          added_at: today
+          added_at: today,
+          updated_at: Date.now()
         };
         todos.unshift(newTodo);
         if (useFirebase) fsWriteTodo(settings, newTodo).catch(function() {});
+        recordChange('todos', 'add', entryData.question_name, newTodo);
       });
 
       await saveTodos(todos);
+      
+      // V5 FIX: Explicitly bump sync time after bulk todo update
+      await bumpGlobalSyncTime(settings).catch(function() {});
+      
+      // 2. Push changes immediately
+      await autoSync();
+
       sendResponse({ ok: true, count: todos.length });
     })();
     return true;
@@ -197,24 +231,26 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'toggleDoneFromPage') {
     (async function () {
+      // 1. Pull changes first
+      await autoSync();
+
       var settings = await getSettings();
       var entries = await loadCache();
       var name = request.question_name;
       if (request.isDone) {
-        // Un-done: remove entry entirely (keep fav state if it was fav)
-        var entry = entries.find(function (e) { return e.question_name === name; });
-        if (entry && entry.is_favourite) {
-          // Keep it but mark not done somehow — actually done = "in DB", so we just leave it
-          // but user clicked done btn to un-done → remove from DB
-        }
+        // Un-done: remove entry from local cache and Firebase
         entries = entries.filter(function (e) { return e.question_name !== name; });
         await saveCache(entries);
         if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
           try { await fsDelete(settings, request.subject, name); } catch (e) { }
+          
         }
+        // Record the deletion so sync knows this was intentional (not a remote delete)
+        recordChange('entries', 'delete', name, { subject: request.subject || 'other' });
       } else {
         var entry = request.entryData;
         entry.is_favourite = false;
+        entry.updated_at = Date.now();
         var ex = entries.find(function (e) { return e.question_name === name; });
         if (ex) {
           if (ex.is_favourite) entry.is_favourite = ex.is_favourite; // preserve fav state
@@ -225,8 +261,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         await saveCache(entries);
         if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
           try { await fsWrite(settings, entry); } catch (e) { }
+          
         }
+        recordChange('entries', 'add', name, entry);
       }
+      
+      // 2. Push changes immediately
+      await autoSync();
+      
       sendResponse({ ok: true });
     })();
     return true;
@@ -234,24 +276,32 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'toggleFavouriteFromPage') {
     (async function () {
-      //... logic remains
+      // 1. Pull changes first
+      await autoSync();
+
       var settings = await getSettings();
       var entries = await loadCache();
       var name = request.question_name;
       var ex = entries.find(function (e) { return e.question_name === name; });
 
       if (request.isFav) {
+        // Un-favourite
         if (ex) {
           ex.is_favourite = false;
+          ex.updated_at = Date.now();
           delete ex.repeated_question;
           await saveCache(entries);
           if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
             try { await fsWrite(settings, ex); } catch (e) { }
+            
           }
+          recordChange('entries', 'update', name, ex);
         }
       } else {
+        // Mark as favourite
         var entry = request.entryData;
         entry.is_favourite = true;
+        entry.updated_at = Date.now();
         if (ex) {
           if (ex.logged_at) entry.logged_at = ex.logged_at;
           entries = entries.filter(function (e) { return e.question_name !== name; });
@@ -262,7 +312,12 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
           try { await fsWrite(settings, entry); } catch (e) { }
         }
+        recordChange('entries', 'update', name, entry);
       }
+
+      // 2. Push changes immediately
+      await autoSync();
+
       sendResponse({ ok: true });
     })();
     return true;
@@ -282,18 +337,23 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     
     for (var i = 0; i < entries.length; i++) {
        var e = entries[i];
-       if (e.logged_at || e.is_favourite || inDupGroups.has(e.question_name)) {
-         newEntries.push(e);
-       } else {
+        if (e.logged_at || e.is_favourite || inDupGroups.has(e.question_name)) {
+          // If we are keeping it, ensure it has a timestamp for future syncs
+          if (!e.updated_at) e.updated_at = Date.now();
+          newEntries.push(e);
+        } else {
          orphansFound = true;
          if (settings.mode === 'firebase' && settings.firebaseApiKey) {
            try { await fsDelete(settings, e.subject || 'other', e.question_name); } catch(err){}
          }
+         // Record deletion for sync
+         recordChange('entries', 'delete', e.question_name, { subject: e.subject || 'other' });
        }
     }
     
     if (orphansFound) {
        await saveCache(newEntries);
+       
     } else {
        await saveCache(entries); // preserve any changes made to entries prior to calling this
     }
@@ -303,6 +363,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'saveDuplicateGroup') {
     (async function() {
+      // 1. Pull changes first
+      await autoSync();
+
       var settings = await getSettings();
       var entries = await loadCache();
       var groups = await loadDuplicates();
@@ -396,9 +459,11 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
           });
         }
         if (!newGroup.status) newGroup.status = 'ai';
+        newGroup.updated_at = Date.now(); // Stamp group creation
         groups.push(newGroup);
         finalGroup = newGroup;
       }
+      finalGroup.updated_at = Date.now(); // Stamp every update
 
       // Sync entries data
       var primary = finalGroup.primary || finalGroup.questions[0] || '';
@@ -414,21 +479,35 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
             ex.logged_at = null;
             ex.is_favourite = false;
           }
+          ex.updated_at = Date.now(); // CRITICAL: ensure delta pulls can see the change
+          // Always record entry update for dup questions
+          recordChange('entries', 'update', name, ex);
         } else {
           var u = name.toUpperCase();
           var subj = u.includes('CHEMI') ? 'chemistry' : u.includes('PHYSI') || u.includes('PHYS') ? 'physics' : u.includes('MATH') ? 'mathematics' : u.includes('BIOL') || u.includes('BIO') ? 'biology' : 'other';
-          entries.unshift({ 
+          var newEntry = { 
             question_name: name, subject: subj, question_imgs: [], answer_imgs: [], old_topics: '', 
-            is_favourite: false, logged_at: null, source_url: qUrl || ''
-          });
+            is_favourite: false, logged_at: null, source_url: qUrl || '', updated_at: Date.now()
+          };
+          entries.unshift(newEntry);
+          recordChange('entries', 'add', name, newEntry);
         }
       });
 
       if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-        try { await fsWriteDupGroup(settings, finalGroup); } catch(e) {}
+        try { 
+          await fsWriteDupGroup(settings, finalGroup); 
+          
+        } catch(e) {}
       }
+      // Record this dup group mutation for the next sync
+      recordChange('dups', existingGroup && !isDirectUpdate ? 'update' : 'add', finalGroup.id, finalGroup);
 
       await cleanOrphansAndSync(entries, groups, settings);
+
+      // 2. Push changes immediately
+      await autoSync();
+
       sendResponse({ ok: true, merged: !!existingGroup });
     })();
     return true;
@@ -436,6 +515,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'removeDuplicateGroup') {
     (async function() {
+      // 1. Pull changes first
+      await autoSync();
+
       var settings = await getSettings();
       var entries = await loadCache();
       var groups = await loadDuplicates();
@@ -447,10 +529,23 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         var group = groups[gIdx];
         if (asRejected) {
           group.status = 'ai-rejected';
-          if (settings.mode === 'firebase') { try { await fsWriteDupGroup(settings, group); } catch(e) {} }
+          group.updated_at = Date.now();
+          if (settings.mode === 'firebase') { 
+            try { 
+              await fsWriteDupGroup(settings, group); 
+              
+            } catch(e) {} 
+          }
+          recordChange('dups', 'update', groupId, group);
         } else {
           groups.splice(gIdx, 1);
-          if (settings.mode === 'firebase') { try { await fsDeleteDupGroup(settings, groupId); } catch(e) {} }
+          if (settings.mode === 'firebase') { 
+            try { 
+              await fsDeleteDupGroup(settings, groupId); 
+              
+            } catch(e) {} 
+          }
+          recordChange('dups', 'delete', groupId, null);
         }
         
         // Strip repeated_question from all associated entries
@@ -463,6 +558,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       // Trigger orphan cleaning + sync
       await cleanOrphansAndSync(entries, groups, settings);
 
+      // 2. Push changes immediately
+      await autoSync();
+
       sendResponse({ ok: true });
     })();
     return true;
@@ -470,6 +568,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'clearRejectionsForPage') {
     (async function() {
+      // 1. Pull changes first
+      await autoSync();
+
       var questionNames = request.questionNames || [];
       var groups = await loadDuplicates();
       var originalLength = groups.length;
@@ -486,6 +587,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         // Refresh UI so content script's 'rejectedGroups' list is cleared
         if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
         console.log('[IB] Cleared ' + (originalLength - groups.length) + ' AI rejections for this page.');
+        
+        // V5 FIX: Bump sync time so other devices see the rejections are gone
+        var settings = await getSettings();
+        await bumpGlobalSyncTime(settings).catch(function() {});
+        
+        // 2. Push changes immediately
+        await autoSync();
       }
       sendResponse({ ok: true, cleared: originalLength - groups.length });
     })();
@@ -494,6 +602,9 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
   if (request.action === 'clearAllDuplicates') {
     (async function() {
+      // 1. Pull changes first
+      await autoSync();
+
       var settings = await getSettings();
       var entries = await loadCache();
       var groups = await loadDuplicates();
@@ -506,13 +617,24 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         for (var i = 0; i < groups.length; i++) {
           try { await fsDeleteDupGroup(settings, groups[i].id); } catch(e) {}
         }
+        
       }
+      // Record each deletion and clear any pending dup changes (they're all gone)
+      var pendingAfterClear = (await getPendingChanges()).filter(function(c) { return c.collection !== 'dups'; });
+      await chrome.storage.local.set({ [PENDING_CHANGES_KEY]: pendingAfterClear });
       await saveDuplicates([]);
 
-      // Cleanse entries of any duplicate-related state (isPrimary doesn't matter if no groups, but we can't 'restore' old data easily)
+      // Cleanse entries of any duplicate-related state
       await saveCache(entries);
 
+      // V5 FIX: Explicitly bump sync time after bulk duplicates clear
+      await bumpGlobalSyncTime(settings).catch(function() {});
+
       if (sender.tab && sender.tab.id) await markTab(sender.tab.id);
+      
+      // 2. Push changes immediately
+      await autoSync();
+
       sendResponse({ ok: true });
     })();
     return true;
@@ -585,6 +707,59 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       var entries = await loadCache();
       var groups = await loadDuplicates();
       await migrateDataArchitecture(entries, groups, true); // true = deep sweep
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
+  if (request.action === 'clearAllProgress') {
+    (async function() {
+      var settings = await getSettings();
+      var entries = await loadCache();
+      var todos = await loadTodos();
+      var useFirebase = settings.mode === 'firebase' && settings.firebaseApiKey;
+
+      // 1. Clear Local Cache
+      await saveCache([]);
+      await saveTodos([]);
+      
+      // 2. Clear Firebase (if applicable)
+      if (useFirebase) {
+        // We delete individual items to ensure consistency, but we ONLY bump at the end
+        for (var i = 0; i < entries.length; i++) {
+          try { await fsDelete(settings, entries[i].subject || 'other', entries[i].question_name, true); } catch(e){}
+          // Record deletion for sync
+          recordChange('entries', 'delete', entries[i].question_name, { subject: entries[i].subject || 'other' });
+        }
+        for (var j = 0; j < todos.length; j++) {
+          try { await fsDeleteTodo(settings, todos[j].question_name, true); } catch(e){}
+          recordChange('todos', 'delete', todos[j].question_name, null);
+        }
+        
+        // Final Handshake: Notify all devices that EVERYTHING is gone
+        await bumpGlobalSyncTime(settings).catch(function() {});
+      }
+
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
+  if (request.action === 'clearAllTodos') {
+    (async function() {
+      var settings = await getSettings();
+      var todos = await loadTodos();
+      var useFirebase = settings.mode === 'firebase' && settings.firebaseApiKey;
+
+      await saveTodos([]);
+      
+      if (useFirebase) {
+        for (var i = 0; i < todos.length; i++) {
+          try { await fsDeleteTodo(settings, todos[i].question_name, true); } catch(e){}
+          recordChange('todos', 'delete', todos[i].question_name, null);
+        }
+        await bumpGlobalSyncTime(settings).catch(function() {});
+      }
       sendResponse({ ok: true });
     })();
     return true;
@@ -690,6 +865,7 @@ async function migrateDataArchitecture(entries, groups, deepSweep) {
             if (i % 10 === 0) await new Promise(r => setTimeout(r, 50));
           } catch(e) {}
         }
+        
       }
     }
 

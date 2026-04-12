@@ -74,63 +74,61 @@ async function syncFromFirestore(silent) {
   }
   if (syncBtn) { syncBtn.textContent = 'Syncing...'; syncBtn.disabled = true; }
   try {
-    // ── PULL: Fetch all remote data ────────────────────────────────────────────
-    var remoteEntries = await window.IB.fsReadAll();
-    var remoteTodos   = await window.IB.fsReadAllTodos();
-    var remoteDups    = await window.IB.fsReadAllDupGroups();
+    var T_local = await window.IB.getLocalSyncTime();
+    var T_remote = await window.IB.getRemoteSyncTime();   // 1 cheap network call
+    var pending = await window.IB.getPendingChanges();
 
-    // ── MERGE: Combine remote + local (remote wins on conflict) ───────────────
-    window.IB.allEntries = window.IB.mergeEntries(remoteEntries, window.IB.allEntries);
-    await window.IB.saveCache(window.IB.allEntries);
+    // ── PATH A: Nothing changed anywhere ────────────────────────────────────
+    if (T_local === T_remote && pending.length === 0) {
+      if (!silent) showMsg('success', '✓ Already up to date — no changes detected.');
 
-    window.IB.allTodos = window.IB.mergeTodos(remoteTodos, window.IB.allTodos);
-    await window.IB.saveTodos(window.IB.allTodos);
+    // ── PATH B: Push-only ─────────────────────────────────────────────────
+    } else if (T_local === T_remote && pending.length > 0) {
+      await window.IB.applyChangesToFirebase(pending);
+      var T_new = Date.now();
+      await window.IB.setRemoteSyncTime(T_new);
+      await window.IB.setLocalSyncTime(T_new);
+      await window.IB.clearPendingChanges();
+      if (!silent) showMsg('success', '↑ Pushed ' + pending.length + ' local change(s) to Firebase.');
 
-    var remoteIdSet = new Set(remoteDups.map(function(g) { return g.id; }));
-    var localDups = window.IB.duplicatesDB || [];
-    remoteDups.forEach(function(rg) {
-      var idx = localDups.findIndex(function(lg) { return lg.id === rg.id; });
-      if (idx !== -1) localDups[idx] = rg; else localDups.push(rg);
-    });
-    window.IB.duplicatesDB = localDups;
-    await window.IB.saveDuplicates(window.IB.duplicatesDB);
+    // ── PATH C: Full pull-then-push ─────────────────────────────────────────
+    } else {
+      var results = await Promise.all([
+        window.IB.fsReadAll(),
+        window.IB.fsReadAllTodos(),
+        window.IB.fsReadAllDupGroups()
+      ]);
+      var remoteEntries = results[0];
+      var remoteTodos   = results[1];
+      var remoteDups    = results[2];
 
-    // ── PUSH: Upload any local-only items missing from Firebase ───────────────
-    var remoteEntryNames = new Set(remoteEntries.map(function(e) { return e.question_name; }));
-    var pushEntries = 0;
-    for (var i = 0; i < window.IB.allEntries.length; i++) {
-      var e = window.IB.allEntries[i];
-      if (!remoteEntryNames.has(e.question_name)) {
-        try { await window.IB.fsWrite(e); pushEntries++; } catch(_) {}
+      // Merge (remote-authoritative, pending changes reconcile local mutations)
+      window.IB.allEntries   = window.IB.mergeEntries(remoteEntries, window.IB.allEntries, pending);
+      window.IB.allTodos     = window.IB.mergeTodos(remoteTodos, window.IB.allTodos, pending);
+      window.IB.duplicatesDB = window.IB.mergeDupGroups(remoteDups, window.IB.duplicatesDB || [], pending);
+
+      await window.IB.saveCache(window.IB.allEntries);
+      await window.IB.saveTodos(window.IB.allTodos);
+      await window.IB.saveDuplicates(window.IB.duplicatesDB);
+
+      // Push any surviving pending changes (local adds not yet in remote)
+      if (pending.length > 0) await window.IB.applyChangesToFirebase(pending);
+
+      // Seal: update both timestamps and clear the log
+      var T_new = Date.now();
+      await window.IB.setRemoteSyncTime(T_new);
+      await window.IB.setLocalSyncTime(T_new);
+      await window.IB.clearPendingChanges();
+
+      if (!silent) {
+        var msg = '⇅ Full sync: ' + window.IB.allEntries.length + ' entries, ' +
+                  window.IB.allTodos.length + ' todos, ' + window.IB.duplicatesDB.length + ' dup groups';
+        if (pending.length > 0) msg += ' · pushed ' + pending.length + ' local change(s)';
+        showMsg('success', msg);
       }
     }
 
-    var remoteTodoNames = new Set(remoteTodos.map(function(t) { return t.question_name; }));
-    var pushTodos = 0;
-    for (var j = 0; j < window.IB.allTodos.length; j++) {
-      var t = window.IB.allTodos[j];
-      if (!remoteTodoNames.has(t.question_name)) {
-        try { await window.IB.fsWriteTodo(t); pushTodos++; } catch(_) {}
-      }
-    }
-
-    var pushDups = 0;
-    for (var k = 0; k < window.IB.duplicatesDB.length; k++) {
-      var g = window.IB.duplicatesDB[k];
-      if (!remoteIdSet.has(g.id)) {
-        try { await window.IB.fsWriteDupGroup(g); pushDups++; } catch(_) {}
-      }
-    }
-
-    // ── UI REFRESH ─────────────────────────────────────────────────────────────
-    if (!silent) {
-      var msg = 'Synced: ' + remoteEntries.length + ' questions, ' +
-                window.IB.allTodos.length + ' todos, ' + remoteDups.length + ' dup groups';
-      if (pushEntries + pushTodos + pushDups > 0) {
-        msg += ' · Pushed ' + (pushEntries + pushTodos + pushDups) + ' local-only item(s)';
-      }
-      showMsg('success', msg);
-    }
+    // ── UI REFRESH ─────────────────────────────────────────────────────────────────
     if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
     if (document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
     if (document.getElementById('panel-favourites').classList.contains('active')) renderFavouritesPanel();
@@ -266,15 +264,24 @@ function exportJSON() {
 }
 
 async function clearAll() {
-  if (!confirm('Delete ALL ' + window.IB.allEntries.length + ' questions? Cannot be undone.')) return;
-  if (useFirebase()) { 
-    for (var i = 0; i < window.IB.allEntries.length; i++) { try { await window.IB.fsDelete(window.IB.allEntries[i].subject, window.IB.allEntries[i].question_name); } catch (_) { } }
-    for (var j = 0; j < window.IB.allTodos.length; j++) { try { await window.IB.fsDeleteTodo(window.IB.allTodos[j].question_name); } catch (_) { } }
-  }
-  window.IB.allEntries = []; await window.IB.saveCache([]); 
-  window.IB.allTodos = []; await window.IB.saveTodos([]);
-  await markDoneOnPage(); renderDBPanel();
-  showMsg('success', 'All cleared.');
+  var count = window.IB.allEntries.length;
+  if (!confirm('Delete ALL ' + count + ' questions and to-dos? This will wipe your progress on ALL devices. Cannot be undone.')) return;
+  
+  var btn = document.getElementById('clear-btn');
+  if (btn) { btn.textContent = 'Clearing...'; btn.disabled = true; }
+  
+  chrome.runtime.sendMessage({ action: 'clearAllProgress' }, async function() {
+    window.IB.allEntries = [];
+    window.IB.allTodos = [];
+    
+    // Refresh UI
+    renderDBPanel();
+    renderTodayPanel();
+    await markDoneOnPage();
+    
+    showMsg('success', 'Database wiped and synchronized.');
+    if (btn) { btn.textContent = 'Clear all'; btn.disabled = false; }
+  });
 }
 
 window.IB.startFullMigration = function(isManual) {
