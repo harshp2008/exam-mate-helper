@@ -454,14 +454,29 @@ function renderDupsPanel() {
 
 function renderDBPanel() {
   // Non-primary duplicates are excluded from all counts and the list
-  function isNonPrimaryDup(e) {
-    return !!window.IB.isNonPrimaryDuplicate(e.question_name);
+  function isNonPrimaryDup(name) {
+    return !!window.IB.isNonPrimaryDuplicate(name);
   }
-  var visibleEntries = window.IB.allEntries.filter(function(e) { return !isNonPrimaryDup(e); });
+
+  // Calculate "Total Tracked" as the union of ALL unique questions in the database
+  // (Done questions, To-Do items, and Primary Duplicates)
+  var trackedSet = new Set();
+  window.IB.allEntries.forEach(function(e) { trackedSet.add(e.question_name); });
+  (window.IB.allTodos || []).forEach(function(t) { trackedSet.add(t.question_name); });
+  (window.IB.duplicatesDB || []).forEach(function(g) {
+    if (g.status !== 'ai-rejected' && g.primary) trackedSet.add(g.primary);
+  });
+
+  var visibleTotal = 0;
+  trackedSet.forEach(function(name) {
+    if (!isNonPrimaryDup(name)) visibleTotal++;
+  });
+
+  var visibleEntries = window.IB.allEntries.filter(function(e) { return !isNonPrimaryDup(e.question_name); });
   var completedEntries = visibleEntries.filter(function(e) { return e.logged_at; });
   var subjects = new Set(visibleEntries.map(function(e) { return e.subject; }));
 
-  document.getElementById('stat-total').textContent = visibleEntries.length;
+  document.getElementById('stat-total').textContent = visibleTotal;
   var completedEl = document.getElementById('stat-completed');
   if (completedEl) completedEl.textContent = completedEntries.length;
   document.getElementById('stat-subjects').textContent = subjects.size;

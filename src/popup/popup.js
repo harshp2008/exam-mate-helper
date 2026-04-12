@@ -139,6 +139,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   });
 
+  // Init settings wiring (Import Old Data)
+  initSettingsWiring();
+
   // Init duplicate modal event wiring
   window.IB.initDuplicateModal();
 
@@ -190,10 +193,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
   document.getElementById('mode-local').addEventListener('click', function () { setMode('local'); });
   document.getElementById('mode-firebase').addEventListener('click', function () { setMode('firebase'); });
-  document.getElementById('rerun-migration-btn').addEventListener('click', async function() {
-    if (!confirm('Re-run the V2 migration? This will perform a deep cleanup and URL discovery sweep. Your duplicate groups will stay, but their data will be optimized.')) return;
-    await window.IB.startFullMigration(true);
-  });
+
   document.getElementById('clean-dups-btn').addEventListener('click', function() {
     if (!confirm('Clean violating duplicates? This will remove all duplicate groups that violate the strict nomenclature rule.')) return;
     var btn = this;
@@ -219,12 +219,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   updateSyncBtnState();
   populateSettingsUI();
 
-  // Check for V2 Migration
-  chrome.storage.local.get(['ib_v2_migrated'], async function(res) {
-    if (!res.ib_v2_migrated) {
-      await window.IB.startFullMigration();
-    }
-  });
+
 
   // Background sync
   syncFromFirestore(true);

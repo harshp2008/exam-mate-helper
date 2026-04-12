@@ -118,3 +118,48 @@ async function saveSettings() {
     if (useFirebase()) syncFromFirestore(false);
   }
 }
+
+// ── Legacy Migration Wiring ───────────────────────────────────────────────────
+
+function initSettingsWiring() {
+  var importBtn = document.getElementById('import-old-btn');
+  var importInput = document.getElementById('import-old-json-input');
+
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', function() {
+      importInput.click();
+    });
+
+    importInput.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = async function(ev) {
+        try {
+          var jsonData = JSON.parse(ev.target.result);
+          importBtn.disabled = true;
+          importBtn.innerHTML = '⌛ Importing...';
+          
+          var stats = await window.IB.importOldVersionData(jsonData);
+          
+          if (typeof showMsg === 'function') {
+            showMsg('success', 'Migration complete! Merged ' + stats.addedEntries + ' entries and ' + stats.addedTodos + ' todos.');
+          }
+          
+          setTimeout(function() {
+            window.location.reload(); // Refresh to update all panels
+          }, 2500);
+          
+        } catch (err) {
+          console.error('[IB Migration] Error:', err);
+          if (typeof showMsg === 'function') showMsg('error', 'Import failed: Invalid JSON file.');
+          importBtn.disabled = false;
+          importBtn.innerHTML = '📥 Import Data from Old Extension';
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+}
+

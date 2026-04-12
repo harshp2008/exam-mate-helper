@@ -498,8 +498,9 @@
     <div class="settings-section" style="margin-top:20px; border-top:1px solid #eee; padding-top:16px;">
       <div class="settings-title">Database Maintenance</div>
       <div class="settings-row">
-        <button class="db-action-btn" id="rerun-migration-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff;">↻ Re-run V2 Migration</button>
-        <div class="settings-hint">Forces a deep cleanup and URL discovery sweep.</div>
+        <input type="file" id="import-old-json-input" accept=".json" style="display:none;" />
+        <button class="db-action-btn" id="import-old-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff; color:#185FA5; border-color:#c5d8ef;">📥 Import Data from Old Extension</button>
+        <div class="settings-hint">Upload a <code>.json</code> backup from a previous version of ExamMate Helper to migrate your progress.</div>
       </div>
       <div class="settings-row" style="margin-top: 10px;">
         <button class="db-action-btn" id="clean-dups-btn" style="width:100%; justify-content:center; display:flex; align-items:center; gap:8px; background:#fff; color:#A32D2D; border-color:#f7c1c1;">🗑️ Clean Violating Dups</button>
@@ -521,6 +522,7 @@
 <script src="./popup-actions.js"></script>
 <script src="./popup-settings.js"></script>
 <script src="./popup-duplicates.js"></script>
+<script src="./popup-migration.js"></script>
 <script src="./popup.js"></script>
 </body>
 </html>

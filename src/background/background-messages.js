@@ -69,14 +69,6 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     (async function() {
       var entries = await loadCache();
       var groups = await loadDuplicates();
-      
-      // Perform one-time migration if needed
-      var migrationDone = await migrateDataArchitecture(entries, groups);
-      if (migrationDone) {
-        entries = await loadCache();
-        groups = await loadDuplicates();
-      }
-
       var todos = await loadTodos();
       var doneNames = entries.filter(function(e) { return e.logged_at !== null; }).map(function(e) { return e.question_name; });
       var favNames = entries.filter(function(e) { return e.is_favourite; }).map(function(e) { return e.question_name; });
@@ -702,15 +694,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return true;
   }
 
-  if (request.action === 'runFullV2Migration') {
-    (async function() {
-      var entries = await loadCache();
-      var groups = await loadDuplicates();
-      await migrateDataArchitecture(entries, groups, true); // true = deep sweep
-      sendResponse({ ok: true });
-    })();
-    return true;
-  }
+
 
   if (request.action === 'clearAllProgress') {
     (async function() {
@@ -769,109 +753,5 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
 // ── Migration Helper ──────────────────────────────────────────────────────────
 
-async function migrateDataArchitecture(entries, groups, deepSweep) {
-  var changed = false;
-  
-  // 1. Scan entries for legacy repeated_question and ensure a group exists
-  entries.forEach(function(e) {
-    if (e.repeated_question) {
-      var allMembers = (e.repeated_question.linked_questions || []).slice();
-      if (!allMembers.includes(e.question_name)) allMembers.push(e.question_name);
-      allMembers.sort();
-      
-      var gid = 'dup_' + allMembers.join('|');
-      var existingGroup = groups.find(function(g) { return g.id === gid || (g.questions && g.questions.includes(e.question_name)); });
-      
-      if (!existingGroup) {
-        existingGroup = {
-          id: gid,
-          questions: allMembers,
-          primary: e.repeated_question.is_primary ? e.question_name : (allMembers[0] || e.question_name),
-          status: e.repeated_question.marked_by_user ? 'user' : 'ai',
-          urls: {}
-        };
-        groups.push(existingGroup);
-        changed = true;
-      }
-      
-      if (e.source_url && !existingGroup.urls[e.question_name]) {
-        existingGroup.urls[e.question_name] = e.source_url;
-        changed = true;
-      }
-      
-      delete e.repeated_question;
-      changed = true;
-    }
-  });
 
-  // 2. Normalize and Discover URLs
-  groups.forEach(function(g) {
-    var updated = false;
-    if (!g.status) {
-      g.status = 'user';
-      updated = true;
-    }
-    if (!g.urls) {
-      g.urls = {};
-      updated = true;
-    }
-    
-    (g.questions || []).forEach(function(qName) {
-      // a. Try to capture from entries
-      if (!g.urls[qName]) {
-        var ex = entries.find(function(e) { return e.question_name === qName; });
-        if (ex && ex.source_url && ex.source_url !== 'undefined') { 
-          g.urls[qName] = ex.source_url; updated = true; 
-        }
-      }
-      
-      // b. Deep Sweep: Generate smart fallback if still missing
-      if (deepSweep && !g.urls[qName]) {
-        var u = qName.toUpperCase();
-        var sId = '';
-        if (u.includes('CHEMI')) sId = '7';
-        else if (u.includes('PHYSI') || u.includes('PHYS')) sId = '92';
-        else if (u.includes('MATH')) sId = '102';
-        else if (u.includes('BIOL') || u.includes('BIO')) sId = '93';
-        
-        if (sId) {
-          g.urls[qName] = 'https://www.exam-mate.com/topicalpastpapers?subject=' + sId + '&search=' + encodeURIComponent(qName);
-          updated = true;
-        }
-      }
-    });
-    if (updated) changed = true;
-  });
-
-  if (changed || deepSweep) {
-    await saveCache(entries);
-    await saveDuplicates(groups);
-    
-    // Sync Groups & Clean Remote Entries to Firebase if needed
-    var settings = await getSettings();
-    if (settings.mode === 'firebase' && settings.firebaseApiKey && settings.firebaseProjectId) {
-      // a. Save normalized groups
-      for (var i = 0; i < groups.length; i++) {
-        try { await fsWriteDupGroup(settings, groups[i]); } catch(e) {}
-      }
-
-      // b. Deep Sweep: Rewrite ALL entries to ensure remote side is also clean
-      // (This removes the legacy 'repeated_question' field from Firestore docs)
-      if (deepSweep) {
-        for (var i = 0; i < entries.length; i++) {
-          try { 
-            await fsWrite(settings, entries[i]); 
-            // Small throttle to avoid hitting Firestore limits too fast
-            if (i % 10 === 0) await new Promise(r => setTimeout(r, 50));
-          } catch(e) {}
-        }
-        
-      }
-    }
-
-    console.log('[IB Migration] Duplicate data architecture normalized' + (deepSweep ? ' (Deep Sweep & Remote Cleanup)' : '') + '.');
-    return true;
-  }
-  return false;
-}
 

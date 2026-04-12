@@ -284,29 +284,4 @@ async function clearAll() {
   });
 }
 
-window.IB.startFullMigration = function(isManual) {
-  return new Promise(function(resolve) {
-    var screen = document.getElementById('migration-screen');
-    if (screen) screen.classList.add('active');
 
-    chrome.runtime.sendMessage({ action: 'runFullV2Migration' }, async function(res) {
-      // Refresh local cache and duplicates
-      window.IB.allEntries = await window.IB.loadCache();
-      window.IB.duplicatesDB = await window.IB.loadDuplicates();
-      
-      chrome.storage.local.set({ ib_v2_migrated: true }, function() {
-        if (screen) screen.classList.remove('active');
-        
-        // Refresh UI
-        if (document.getElementById('panel-db').classList.contains('active')) renderDBPanel();
-        if (document.getElementById('panel-dups').classList.contains('active')) renderDupsPanel();
-        if (window.IB.currentData) renderCurrentQuestion(window.IB.currentData);
-        
-        if (isManual) {
-          showMsg('success', '\u2713 Migration complete. Data optimized and URLs discovered.');
-        }
-        resolve();
-      });
-    });
-  });
-};
